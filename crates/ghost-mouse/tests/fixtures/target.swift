@@ -41,6 +41,7 @@ w.makeFirstResponder(v)
 w.orderBack(nil)
 NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: nil) { _ in log("became-active") }
 log("ready")
+log("library-path=\(ProcessInfo.processInfo.environment["DYLD_FALLBACK_LIBRARY_PATH"] ?? "")")
 if ProcessInfo.processInfo.environment["GHOST_TARGET_GRAB"] != nil {
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
         app.setActivationPolicy(.regular)

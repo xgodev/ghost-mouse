@@ -122,6 +122,32 @@ fn every_gesture_lands_without_touching_cursor_or_front_app() {
 }
 
 #[test]
+fn a_bare_program_receives_the_library_path_it_was_given() {
+    if std::env::var_os("GHOST_MOUSE_LIVE").is_none() {
+        eprintln!("SKIPPED: set GHOST_MOUSE_LIVE=1 to open a real window");
+        return;
+    }
+    let _turn = window_turn();
+    let dir = tempfile::tempdir_in(env!("CARGO_TARGET_TMPDIR")).unwrap();
+    let binary = dir.path().join("ghost-target");
+    let source = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/target.swift");
+    let built = Command::new("/usr/bin/swiftc").arg(source).arg("-o").arg(&binary).status().unwrap();
+    assert!(built.success());
+    let log = dir.path().join("events.log");
+
+    let ghost = system();
+    let launch = Launch {
+        program: binary,
+        args: vec![log.to_string_lossy().into_owned()],
+        env: vec![("DYLD_FALLBACK_LIBRARY_PATH".into(), "/a b/lib".into())],
+    };
+    let window = ghost.open(&launch, Duration::from_secs(10)).unwrap();
+    let _kill = KillOnDrop(window.pid);
+
+    wait_for_line(&log, "library-path=/a b/lib");
+}
+
+#[test]
 fn a_program_that_grabs_the_front_gives_it_back() {
     if std::env::var_os("GHOST_MOUSE_LIVE").is_none() {
         eprintln!("SKIPPED: set GHOST_MOUSE_LIVE=1 to open a real window");

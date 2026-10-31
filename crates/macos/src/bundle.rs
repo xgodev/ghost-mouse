@@ -55,7 +55,7 @@ fn launch_app(app: &Path, launch: &Launch) -> Result<i32> {
 fn launch_executable(program: &Path, launch: &Launch) -> Result<i32> {
     let dir = wrapper_dir();
     let pid_file = dir.join("pid");
-    let bundle = write_wrapper(&dir, program, &pid_file)?;
+    let bundle = write_wrapper(&dir, program, &pid_file, &launch.env)?;
     open(&bundle, launch)?;
     wait_for_pid(&pid_file, program)
 }
@@ -67,13 +67,13 @@ fn wrapper_dir() -> PathBuf {
     std::env::temp_dir().join(format!("ghost-mouse-{}-{stamp}", process::id()))
 }
 
-fn write_wrapper(dir: &Path, program: &Path, pid_file: &Path) -> Result<PathBuf> {
+fn write_wrapper(dir: &Path, program: &Path, pid_file: &Path, env: &[(String, String)]) -> Result<PathBuf> {
     let bundle = dir.join("Target.app");
     let macos = bundle.join("Contents/MacOS");
     fs::create_dir_all(&macos)?;
     fs::write(bundle.join("Contents/Info.plist"), INFO_PLIST)?;
     let launcher = macos.join("launcher");
-    fs::write(&launcher, launcher_script(&program.to_string_lossy(), &pid_file.to_string_lossy()))?;
+    fs::write(&launcher, launcher_script(&program.to_string_lossy(), &pid_file.to_string_lossy(), env))?;
     fs::set_permissions(&launcher, fs::Permissions::from_mode(0o755))?;
     Ok(bundle)
 }
@@ -120,8 +120,11 @@ pub(crate) fn shell_quote(value: &str) -> String {
 }
 
 /// The wrapper's launcher: records its process id, then becomes the real program, keeping the id.
-pub(crate) fn launcher_script(program: &str, pid_file: &str) -> String {
-    format!("#!/bin/sh\necho $$ > {}\nexec {} \"$@\"\n", shell_quote(pid_file), shell_quote(program))
+/// It sets the variables itself because macOS drops every `DYLD_*` on the way into `/bin/sh`.
+pub(crate) fn launcher_script(program: &str, pid_file: &str, env: &[(String, String)]) -> String {
+    let exports: String =
+        env.iter().map(|(name, value)| format!("export {}\n", shell_quote(&format!("{name}={value}")))).collect();
+    format!("#!/bin/sh\necho $$ > {}\n{exports}exec {} \"$@\"\n", shell_quote(pid_file), shell_quote(program))
 }
 
 /// Returns the ids of processes whose executable sits under `prefix`, from `ps -axo pid=,comm=`.
@@ -147,11 +150,22 @@ mod tests {
 
     #[test]
     fn launcher_records_the_id_then_replaces_itself() {
-        let script = launcher_script("/a b/app", "/t/pid");
+        let script = launcher_script("/a b/app", "/t/pid", &[]);
         assert!(script.starts_with("#!/bin/sh\n"));
         let (record, run) =
             (script.find("echo $$ > '/t/pid'").unwrap(), script.find("exec '/a b/app' \"$@\"").unwrap());
         assert!(record < run);
+    }
+
+    #[test]
+    fn launcher_sets_the_variables_itself_before_becoming_the_program() {
+        let env = [("DYLD_FALLBACK_LIBRARY_PATH".to_string(), "/a b/lib".to_string())];
+        let script = launcher_script("/app", "/t/pid", &env);
+        let (set, run) = (
+            script.find("export 'DYLD_FALLBACK_LIBRARY_PATH=/a b/lib'\n").unwrap(),
+            script.find("exec '/app' \"$@\"").unwrap(),
+        );
+        assert!(set < run);
     }
 
     #[test]

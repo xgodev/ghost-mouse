@@ -49,7 +49,7 @@ ghost-mouse open "/Applications/Visual Studio Code.app" -- --user-data-dir /tmp/
 ghost-mouse open --env HOME=/tmp/test-home ./my-program -- --flag
 ```
 
-Keep an Electron data folder's path short: Electron keeps a socket inside it, and a path over 103 characters makes the program quit at once.
+Variables reach a bare executable even when macOS would drop them, such as `DYLD_FALLBACK_LIBRARY_PATH`. Keep an Electron data folder's path short: Electron keeps a socket inside it, and a path over 103 characters makes the program quit at once.
 
 ## How it works
 
