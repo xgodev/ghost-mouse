@@ -1,0 +1,15 @@
+[package]
+name = "ghost-mouse-core"
+description = "Pure planning of clicks, drags, keys and pictures for programs driven from outside"
+edition.workspace = true
+version.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+repository.workspace = true
+
+[dependencies]
+serde.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

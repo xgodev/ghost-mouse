@@ -1,0 +1,18 @@
+[package]
+name = "ghost-mouse-macos"
+description = "macOS backend of ghost-mouse: events sent straight to one process"
+edition.workspace = true
+version.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+repository.workspace = true
+
+[dependencies]
+ghost-mouse-core.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2.workspace = true
+objc2-foundation.workspace = true
+objc2-core-foundation.workspace = true
+objc2-core-graphics.workspace = true
+objc2-app-kit.workspace = true

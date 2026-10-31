@@ -1,0 +1,20 @@
+[package]
+name = "ghost-mouse"
+description = "Click, drag, type and take pictures of any desktop program without touching the real mouse"
+edition.workspace = true
+version.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+repository.workspace = true
+
+[dependencies]
+ghost-mouse-core.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+ghost-mouse-macos.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
