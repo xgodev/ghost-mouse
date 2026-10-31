@@ -2,7 +2,12 @@
 
 use std::{path::Path, path::PathBuf, time::Duration};
 
-use crate::{error::Result, geometry::Window, input::Input};
+use crate::{
+    error::{Error, Result},
+    geometry::Window,
+    input::Input,
+    panel::Panel,
+};
 
 /// A program to open in the background.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -29,4 +34,33 @@ pub trait Backend {
     fn front_pid(&self) -> Option<i32>;
     /// Puts a process back in front.
     fn activate(&self, pid: i32) -> Result<()>;
+
+    /// The file panel the process shows, if any.
+    fn panel(&self, _pid: i32) -> Result<Option<Panel>> {
+        Err(Error::Unsupported)
+    }
+    /// Shows the folder above the one in the panel; `false` when there is none.
+    fn panel_up(&self, _pid: i32) -> Result<bool> {
+        Err(Error::Unsupported)
+    }
+    /// Lists a folder's rows under its own row.
+    fn panel_expand(&self, _pid: i32, _row: &Path) -> Result<()> {
+        Err(Error::Unsupported)
+    }
+    /// Selects one row.
+    fn panel_select(&self, _pid: i32, _row: &Path) -> Result<()> {
+        Err(Error::Unsupported)
+    }
+    /// Fills in the name of a file to save.
+    fn panel_name(&self, _pid: i32, _name: &str) -> Result<()> {
+        Err(Error::Unsupported)
+    }
+    /// Presses the button that accepts the panel.
+    fn panel_confirm(&self, _pid: i32) -> Result<()> {
+        Err(Error::Unsupported)
+    }
+    /// Presses the button that dismisses the panel.
+    fn panel_cancel(&self, _pid: i32) -> Result<()> {
+        Err(Error::Unsupported)
+    }
 }

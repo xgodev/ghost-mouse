@@ -6,13 +6,14 @@ mod bundle;
 mod events;
 mod front;
 mod location;
+mod panel;
 mod virtual_keys;
 mod windows;
 
 use std::{path::Path, process::Command, thread, time::Duration};
 
 pub use events::cursor_position;
-use ghost_mouse_core::{Backend, Error, Input, Launch, Result, Window};
+use ghost_mouse_core::{Backend, Error, Input, Launch, Panel, Result, Window};
 
 /// The system backend for macOS.
 #[derive(Debug, Default, Clone, Copy)]
@@ -52,5 +53,33 @@ impl Backend for MacBackend {
 
     fn activate(&self, pid: i32) -> Result<()> {
         front::activate(pid)
+    }
+
+    fn panel(&self, pid: i32) -> Result<Option<Panel>> {
+        panel::read(pid)
+    }
+
+    fn panel_up(&self, pid: i32) -> Result<bool> {
+        panel::up(pid)
+    }
+
+    fn panel_expand(&self, pid: i32, row: &Path) -> Result<()> {
+        panel::expand(pid, row)
+    }
+
+    fn panel_select(&self, pid: i32, row: &Path) -> Result<()> {
+        panel::select(pid, row)
+    }
+
+    fn panel_name(&self, pid: i32, name: &str) -> Result<()> {
+        panel::name(pid, name)
+    }
+
+    fn panel_confirm(&self, pid: i32) -> Result<()> {
+        panel::confirm(pid)
+    }
+
+    fn panel_cancel(&self, pid: i32) -> Result<()> {
+        panel::cancel(pid)
     }
 }

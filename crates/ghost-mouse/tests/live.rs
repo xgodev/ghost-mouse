@@ -5,14 +5,14 @@
 
 use std::{
     fs,
-    path::Path,
+    path::{Path, PathBuf},
     process::Command,
     sync::{Mutex, MutexGuard},
     thread,
     time::{Duration, Instant},
 };
 
-use ghost_mouse::{cursor_position, system, Button, Launch, Point, Window};
+use ghost_mouse::{cursor_position, system, Backend, Button, Error, Launch, Point, Window};
 
 static WINDOW_TURN: Mutex<()> = Mutex::new(());
 
@@ -172,4 +172,198 @@ fn a_program_that_grabs_the_front_gives_it_back() {
 
     wait_for_line(&log, "became-active");
     assert_ne!(front_app(), window.owner);
+}
+
+/// A program behind the others, showing a native file panel on a small folder tree:
+/// `a/deep/file.txt`, `a/açã.txt`, `b/here.txt`, `b/existing.txt`, `c/` and `.hidden/secret.txt`.
+struct PanelProgram {
+    _kill: KillOnDrop,
+    dir: tempfile::TempDir,
+    log: PathBuf,
+    pid: i32,
+    /// The panel's window; the cursor has no business going there.
+    panel: Window,
+    front: Option<i32>,
+}
+
+impl PanelProgram {
+    fn open(shows: &str, env: &[&str]) -> Self {
+        let dir = tempfile::tempdir_in(env!("CARGO_TARGET_TMPDIR")).unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        for folder in ["a/deep", "b", "c", ".hidden"] {
+            fs::create_dir_all(root.join(folder)).unwrap();
+        }
+        for file in ["a/deep/file.txt", "a/açã.txt", "b/here.txt", "b/existing.txt", ".hidden/secret.txt"] {
+            fs::write(root.join(file), "").unwrap();
+        }
+        let binary = dir.path().join("ghost-panel");
+        let source = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/panel.swift");
+        let built = Command::new("/usr/bin/swiftc").arg(source).arg("-o").arg(&binary).status().unwrap();
+        assert!(built.success());
+        let log = dir.path().join("panel.log");
+
+        let ghost = system();
+        let launch = Launch {
+            program: binary,
+            args: vec![log.to_string_lossy().into_owned(), root.join(shows).to_string_lossy().into_owned()],
+            env: env.iter().map(|name| (name.to_string(), "1".to_string())).collect(),
+        };
+        let front = ghost.backend().front_pid();
+        let pid = ghost.open(&launch, Duration::from_secs(10)).unwrap().pid;
+        wait_for_line(&log, "panel-opening");
+        let started = Instant::now();
+        while ghost.backend().panel(pid).unwrap().is_none() {
+            assert!(started.elapsed() < Duration::from_secs(5), "the panel never showed");
+            thread::sleep(Duration::from_millis(50));
+        }
+        let panel = ghost.main_window(pid).unwrap();
+        Self { _kill: KillOnDrop(pid), dir, log, pid, panel, front }
+    }
+
+    fn path(&self, part: &str) -> PathBuf {
+        self.dir.path().canonicalize().unwrap().join(part)
+    }
+
+    /// The owner may be using the machine, so both may change; neither may go to this program.
+    fn assert_cursor_and_front_stayed_out(&self, cursor_at_start: Point) {
+        let cursor = cursor_position().unwrap();
+        let on_panel = |at: Point| {
+            (self.panel.x..self.panel.x + self.panel.width).contains(&at.x)
+                && (self.panel.y..self.panel.y + self.panel.height).contains(&at.y)
+        };
+        assert!(!on_panel(cursor) || on_panel(cursor_at_start), "the real cursor went to the panel: {cursor:?}");
+        assert_ne!(system().backend().front_pid(), Some(self.pid), "the program stayed in front");
+        assert_ne!(self.front, Some(self.pid), "the program was in front before the test");
+    }
+
+    fn assert_chose(&self, wanted: &Path) {
+        wait_for_line(&self.log, &format!("chose {}", wanted.display()));
+    }
+}
+
+const PANEL_WAIT: Duration = Duration::from_secs(40);
+
+fn live_panel() -> Option<MutexGuard<'static, ()>> {
+    if std::env::var_os("GHOST_MOUSE_LIVE").is_none() {
+        eprintln!("SKIPPED: set GHOST_MOUSE_LIVE=1 to open a real window");
+        return None;
+    }
+    Some(window_turn())
+}
+
+#[test]
+fn a_file_is_chosen_in_a_panel_behind_the_others() {
+    let Some(_turn) = live_panel() else { return };
+    let program = PanelProgram::open("b", &[]);
+    let cursor = cursor_position().unwrap();
+    let wanted = program.path("b/here.txt");
+    assert_eq!(system().choose_file(program.pid, &wanted, PANEL_WAIT).unwrap(), wanted);
+    program.assert_chose(&wanted);
+    program.assert_cursor_and_front_stayed_out(cursor);
+}
+
+#[test]
+fn a_file_elsewhere_is_reached_through_the_panel() {
+    let Some(_turn) = live_panel() else { return };
+    let program = PanelProgram::open("c", &[]);
+    let cursor = cursor_position().unwrap();
+    let wanted = program.path("a/deep/file.txt");
+    system().choose_file(program.pid, &wanted, PANEL_WAIT).unwrap();
+    program.assert_chose(&wanted);
+    program.assert_cursor_and_front_stayed_out(cursor);
+}
+
+#[test]
+fn an_accented_name_is_chosen() {
+    let Some(_turn) = live_panel() else { return };
+    let program = PanelProgram::open("a", &[]);
+    let wanted = program.path("a/açã.txt");
+    system().choose_file(program.pid, &wanted, PANEL_WAIT).unwrap();
+    program.assert_chose(&wanted);
+}
+
+#[test]
+fn a_name_stored_with_decomposed_accents_is_chosen() {
+    let Some(_turn) = live_panel() else { return };
+    let program = PanelProgram::open("a", &[]);
+    fs::write(program.path("a/cafe\u{301}.txt"), "").unwrap();
+    system().choose_file(program.pid, &program.path("a/caf\u{e9}.txt"), PANEL_WAIT).unwrap();
+    program.assert_chose(&program.path("a/caf\u{e9}.txt"));
+}
+
+#[test]
+fn a_file_the_panel_hides_confirms_nothing() {
+    let Some(_turn) = live_panel() else { return };
+    let program = PanelProgram::open("b", &[]);
+    let hidden = program.path(".hidden/secret.txt");
+    let error = system().choose_file(program.pid, &hidden, PANEL_WAIT).unwrap_err();
+    assert!(matches!(&error, Error::NotInPanel { path } if *path == hidden), "{error}");
+    system().cancel_file_panel(program.pid, PANEL_WAIT).unwrap();
+    wait_for_line(&program.log, "cancelled");
+}
+
+#[test]
+fn a_panel_is_cancelled_behind_the_others() {
+    let Some(_turn) = live_panel() else { return };
+    let program = PanelProgram::open("b", &[]);
+    let cursor = cursor_position().unwrap();
+    system().cancel_file_panel(program.pid, PANEL_WAIT).unwrap();
+    wait_for_line(&program.log, "cancelled");
+    program.assert_cursor_and_front_stayed_out(cursor);
+}
+
+#[test]
+fn a_new_file_is_named_in_a_save_panel() {
+    let Some(_turn) = live_panel() else { return };
+    let program = PanelProgram::open("b", &["GHOST_PANEL_SAVE"]);
+    let cursor = cursor_position().unwrap();
+    let wanted = program.path("b/novo açã.txt");
+    assert_eq!(system().choose_file(program.pid, &wanted, PANEL_WAIT).unwrap(), wanted);
+    program.assert_chose(&wanted);
+    program.assert_cursor_and_front_stayed_out(cursor);
+}
+
+#[test]
+fn a_new_file_in_another_folder_is_saved_there() {
+    let Some(_turn) = live_panel() else { return };
+    let program = PanelProgram::open("b", &["GHOST_PANEL_SAVE"]);
+    let wanted = program.path("a/deep/novo.txt");
+    system().choose_file(program.pid, &wanted, PANEL_WAIT).unwrap();
+    program.assert_chose(&wanted);
+}
+
+#[test]
+fn a_new_file_in_an_empty_folder_is_saved_there() {
+    let Some(_turn) = live_panel() else { return };
+    let program = PanelProgram::open("c", &["GHOST_PANEL_SAVE"]);
+    let wanted = program.path("c/novo.txt");
+    system().choose_file(program.pid, &wanted, PANEL_WAIT).unwrap();
+    program.assert_chose(&wanted);
+}
+
+#[test]
+fn a_save_panel_never_replaces_a_file() {
+    let Some(_turn) = live_panel() else { return };
+    let program = PanelProgram::open("b", &["GHOST_PANEL_SAVE"]);
+    let error = system().choose_file(program.pid, &program.path("b/existing.txt"), PANEL_WAIT).unwrap_err();
+    assert!(matches!(error, Error::Invalid { .. }), "{error}");
+    system().cancel_file_panel(program.pid, PANEL_WAIT).unwrap();
+}
+
+#[test]
+fn a_panel_shown_as_a_sheet_is_reached() {
+    let Some(_turn) = live_panel() else { return };
+    let program = PanelProgram::open("b", &["GHOST_PANEL_SHEET"]);
+    let wanted = program.path("b/here.txt");
+    system().choose_file(program.pid, &wanted, PANEL_WAIT).unwrap();
+    program.assert_chose(&wanted);
+}
+
+#[test]
+fn a_file_the_panel_filters_out_is_refused() {
+    let Some(_turn) = live_panel() else { return };
+    let program = PanelProgram::open("b", &["GHOST_PANEL_ONLY_PNG"]);
+    let error = system().choose_file(program.pid, &program.path("b/here.txt"), PANEL_WAIT).unwrap_err();
+    assert!(matches!(error, Error::PanelRefused), "{error}");
+    system().cancel_file_panel(program.pid, PANEL_WAIT).unwrap();
 }

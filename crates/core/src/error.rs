@@ -1,5 +1,7 @@
 //! Every way a ghost-mouse operation can fail.
 
+use std::path::PathBuf;
+
 use thiserror::Error;
 
 use crate::geometry::Point;
@@ -34,6 +36,27 @@ pub enum Error {
     /// The opened program took the front and it could not be given back.
     #[error("process {pid} took the front and it could not be given back to process {front}")]
     FrontLost { pid: i32, front: i32 },
+    /// The process shows no file panel.
+    #[error("process {pid} shows no file panel")]
+    NoFilePanel { pid: i32 },
+    /// The panel never lists the path, so nothing was confirmed.
+    #[error("the file panel does not list {path}")]
+    NotInPanel { path: PathBuf },
+    /// The panel only lets a list of rows be walked, and shows them some other way.
+    #[error("the file panel is not in list view")]
+    PanelNotInList,
+    /// The panel's confirm button stays disabled for what was selected.
+    #[error("the file panel does not accept what was selected")]
+    PanelRefused,
+    /// The panel stayed open after confirming.
+    #[error("the file panel stayed open after confirming {path}")]
+    PanelStayedOpen { path: PathBuf },
+    /// The panel stayed open after cancelling.
+    #[error("the file panel of process {pid} stayed open after cancelling")]
+    PanelNotCancelled { pid: i32 },
+    /// This program may not read other programs' windows.
+    #[error("this program needs the Accessibility permission (System Settings > Privacy & Security)")]
+    NoAccessibility,
     /// This operating system has no backend yet.
     #[error("this operating system is not supported yet")]
     Unsupported,

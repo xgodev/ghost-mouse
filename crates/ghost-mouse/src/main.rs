@@ -110,6 +110,24 @@ enum Command {
         target: Target,
         out: PathBuf,
     },
+    /// Completes the program's native file panel with a path and prints the path chosen.
+    ChooseFile {
+        #[arg(long)]
+        pid: i32,
+        /// In an open panel the file to choose; in a save panel the new file, which must not exist.
+        path: PathBuf,
+        /// How long to wait for the panel, and for it to reach the path.
+        #[arg(long, default_value_t = 60)]
+        wait_secs: u64,
+    },
+    /// Cancels the program's native file panel.
+    CancelFile {
+        #[arg(long)]
+        pid: i32,
+        /// How long to wait for the panel.
+        #[arg(long, default_value_t = 30)]
+        wait_secs: u64,
+    },
 }
 
 fn parse_env(text: &str) -> std::result::Result<(String, String), String> {
@@ -149,6 +167,13 @@ fn run(command: Command) -> Result<Option<serde_json::Value>> {
         Command::Key { target, chord } => ghost.press(&window(&target)?, chord).map(|()| None),
         Command::Type { target, text } => ghost.type_text(&window(&target)?, &text).map(|()| None),
         Command::Shot { target, out } => Ok(Some(json!(ghost.shot(&window(&target)?, &out)?))),
+        Command::ChooseFile { pid, path, wait_secs } => {
+            let chosen = ghost.choose_file(pid, &path, Duration::from_secs(wait_secs))?;
+            Ok(Some(json!({ "path": chosen })))
+        }
+        Command::CancelFile { pid, wait_secs } => {
+            ghost.cancel_file_panel(pid, Duration::from_secs(wait_secs)).map(|()| None)
+        }
     }
 }
 

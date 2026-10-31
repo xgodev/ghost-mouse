@@ -103,7 +103,7 @@ impl<B: Backend> Ghost<B> {
     }
 
     /// Only undoes the program itself: a person moving to another app is left alone.
-    fn keep_front(&self, pid: i32, front: i32) -> Result<()> {
+    pub(crate) fn keep_front(&self, pid: i32, front: i32) -> Result<()> {
         let mut waited = Duration::ZERO;
         loop {
             if self.backend.front_pid() == Some(pid) {
