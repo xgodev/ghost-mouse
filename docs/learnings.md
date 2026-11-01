@@ -16,5 +16,5 @@ source: claude-code-sessions
 ## 2026-11-01 — Contador de apps do macOS passa de 32 bits
 
 - **Gotcha / invariant:** o número de série (ASN) de cada programa sobe 0x1001 a cada programa registrado. Ao passar de `0x0-0xffffffff` vira `0x1-…`; a partir daí o `loginwindow` registra `Unable to get PID for context [1,…]: status -600`, o que abre por LaunchServices fica em estado `T` em `_dyld_start`, e `postToPid`/`postToPSN` não entregam. `screencapture` e `AXPress` continuam funcionando.
-- **Why it matters:** o sintoma parece permissão ou bug do programa; `lsappinfo info -only ASN <pid>` mostra a causa em um comando. Só reiniciar zera a contagem.
+- **Why it matters:** o sintoma parece permissão ou bug do programa; `lsappinfo info -only ASN <pid>` mostra a causa em um comando. Reiniciar zera a contagem (medido: ASN volta a `0x0-…` e a Calculadora abre, recebe tecla e aparece no `shot`).
 - **Applies to:** quem chama `osascript` em laço gasta o contador (uma chamada por segundo estoura em cerca de 21 dias).
