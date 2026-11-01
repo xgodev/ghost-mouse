@@ -172,6 +172,7 @@ impl<B: Backend> Ghost<B> {
     }
 
     fn run(&self, window: &Window, steps: Vec<Step>) -> Result<()> {
+        self.backend.check_delivery(window.pid)?;
         for step in steps {
             match step {
                 Step::Send(input) => self.backend.send(window, &input)?,

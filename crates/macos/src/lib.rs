@@ -61,6 +61,10 @@ impl Backend for MacBackend {
         web::press(window, at)
     }
 
+    fn check_delivery(&self, pid: i32) -> Result<()> {
+        front::check_delivery(pid)
+    }
+
     fn panel(&self, pid: i32) -> Result<Option<Panel>> {
         panel::read(pid)
     }

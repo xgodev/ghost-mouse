@@ -36,6 +36,12 @@ pub enum Error {
     /// The opened program took the front and it could not be given back.
     #[error("process {pid} took the front and it could not be given back to process {front}")]
     FrontLost { pid: i32, front: i32 },
+    /// The system leaves what it opens stopped at launch.
+    #[error("macOS keeps {program} stopped at launch: its count of opened programs ran past 32 bits; restart the Mac")]
+    HeldStopped { program: PathBuf },
+    /// The system would accept the event and never deliver it.
+    #[error("macOS does not deliver events to process {pid}: its count of opened programs ran past 32 bits; restart the Mac")]
+    EventsLost { pid: i32 },
     /// The process shows no file panel.
     #[error("process {pid} shows no file panel")]
     NoFilePanel { pid: i32 },

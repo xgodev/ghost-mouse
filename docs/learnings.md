@@ -1,7 +1,7 @@
 ---
 tags: [ghost-mouse, learnings]
 created: 2026-10-31
-updated: 2026-10-31
+updated: 2026-11-01
 source: claude-code-sessions
 ---
 
@@ -12,3 +12,9 @@ source: claude-code-sessions
 - **Gotcha / invariant:** numa janela sem foco, o AppKit pergunta `acceptsFirstMouse`; o WKWebView responde falso e o `mouseDown` não chega à página. `AXPress` no elemento da página funciona atrás de outros apps, sem mexer no cursor nem trazer a janela para a frente.
 - **Why it matters:** evento por `CGEvent.postToPid` não torna a janela ativa, então clique por evento nunca aciona esse conteúdo.
 - **Applies to:** a árvore de acessibilidade do web view só carrega depois de consultada (cerca de 1 a 2 s), e a posição logo após `open` pode vir defasada: não comparar frames com igualdade exata. Coordenada de acessibilidade é de tela (ponto da janela + x,y da janela).
+
+## 2026-11-01 — Contador de apps do macOS passa de 32 bits
+
+- **Gotcha / invariant:** o número de série (ASN) de cada programa sobe 0x1001 a cada programa registrado. Ao passar de `0x0-0xffffffff` vira `0x1-…`; a partir daí o `loginwindow` registra `Unable to get PID for context [1,…]: status -600`, o que abre por LaunchServices fica em estado `T` em `_dyld_start`, e `postToPid`/`postToPSN` não entregam. `screencapture` e `AXPress` continuam funcionando.
+- **Why it matters:** o sintoma parece permissão ou bug do programa; `lsappinfo info -only ASN <pid>` mostra a causa em um comando. Só reiniciar zera a contagem.
+- **Applies to:** quem chama `osascript` em laço gasta o contador (uma chamada por segundo estoura em cerca de 21 dias).

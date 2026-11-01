@@ -33,9 +33,17 @@ struct Fake {
     /// The system can press what sits at any point.
     pressable: bool,
     pressed: RefCell<Vec<(u32, Point)>>,
+    /// The system says events to this program go nowhere.
+    undeliverable: bool,
 }
 
 impl Backend for Fake {
+    fn check_delivery(&self, pid: i32) -> Result<()> {
+        if self.undeliverable {
+            return Err(Error::EventsLost { pid });
+        }
+        Ok(())
+    }
     fn press_at(&self, window: &Window, at: Point) -> bool {
         if self.pressable {
             self.pressed.borrow_mut().push((window.id, at));
@@ -92,6 +100,24 @@ fn window(id: u32, title: &str, width: f64, height: f64, on_screen: bool) -> Win
 
 fn at(x: f64, y: f64) -> Point {
     Point { x, y }
+}
+
+#[test]
+fn nothing_reports_success_when_events_cannot_arrive() {
+    let ghost = Ghost::new(Fake { undeliverable: true, ..Fake::default() });
+    let target = window(1, "x", 100.0, 100.0, true);
+    assert!(matches!(ghost.click(&target, at(10.0, 20.0), Button::Left, 1), Err(Error::EventsLost { pid: PROGRAM })));
+    assert!(matches!(ghost.hover(&target, at(10.0, 20.0)), Err(Error::EventsLost { .. })));
+    assert!(matches!(ghost.type_text(&target, "a"), Err(Error::EventsLost { .. })));
+    assert!(ghost.backend().sent.borrow().is_empty());
+}
+
+#[test]
+fn a_press_still_works_when_events_cannot_arrive() {
+    let ghost = Ghost::new(Fake { undeliverable: true, pressable: true, ..Fake::default() });
+    let target = window(1, "x", 100.0, 100.0, true);
+    ghost.click(&target, at(10.0, 20.0), Button::Left, 1).unwrap();
+    assert_eq!(ghost.backend().pressed.borrow().len(), 1);
 }
 
 #[test]

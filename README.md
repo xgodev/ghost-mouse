@@ -52,6 +52,7 @@ Measured on macOS with another app in front: a Rust + Slint app, a native Mac ap
 - A program that brings itself forward as it starts (VS Code does) is in front for a moment, until `open` hands the front back. `open` only undoes the program itself, never a person moving to another app.
 - It sees nothing inside the program but the picture, and an event has no receipt: confirm the effect with `shot`.
 - Minimized windows and windows on another Space were not measured.
+- macOS numbers each program it starts, and each start adds to the count. Past 32 bits (measured after about a million starts in 21 days, with a tool calling `osascript` every second), what it opens stays stopped and events sent to any new program are dropped, while pictures and accessibility presses still work. `open` then answers that the program is held stopped and every gesture answers that events are not delivered, until the Mac restarts.
 
 ## Opening programs without their data
 

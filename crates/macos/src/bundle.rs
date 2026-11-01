@@ -14,6 +14,10 @@ use ghost_mouse_core::{Error, Launch, Result};
 
 const LAUNCH_DEADLINE: Duration = Duration::from_secs(20);
 const LAUNCH_POLL: Duration = Duration::from_millis(50);
+/// A program starts stopped and is let go within moments; longer than this, nothing will let it go.
+const HOLD_GRACE: Duration = Duration::from_secs(5);
+const LSREGISTER: &str =
+    "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister";
 
 const INFO_PLIST: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -44,7 +48,7 @@ fn launch_app(app: &Path, launch: &Launch) -> Result<i32> {
     loop {
         let new: Vec<i32> = running_under(&prefix)?.into_iter().filter(|pid| !before.contains(pid)).collect();
         match new.as_slice() {
-            [pid] => return Ok(*pid),
+            [pid] => return not_held(*pid, app),
             [] if started.elapsed() < LAUNCH_DEADLINE => thread::sleep(LAUNCH_POLL),
             [] => return Err(Error::Launch(format!("{} did not start", app.display()))),
             several => return Err(Error::Launch(format!("{} started more than once: {several:?}", app.display()))),
@@ -57,7 +61,42 @@ fn launch_executable(program: &Path, launch: &Launch) -> Result<i32> {
     let pid_file = dir.join("pid");
     let bundle = write_wrapper(&dir, program, &pid_file, &launch.env)?;
     open(&bundle, launch)?;
-    wait_for_pid(&pid_file, program)
+    let prefix = format!("{}/Contents/MacOS/", fs::canonicalize(&bundle)?.display());
+    let pid = wait_for_pid(&pid_file, program, &prefix);
+    unregister(&bundle);
+    pid
+}
+
+/// `open` registers every wrapper with the system; nothing else would ever remove the entry.
+/// A failure only leaves that entry behind, so it does not fail the launch.
+fn unregister(bundle: &Path) {
+    let _ = Command::new(LSREGISTER).arg("-u").arg(bundle).output();
+}
+
+fn not_held(pid: i32, program: &Path) -> Result<i32> {
+    let started = Instant::now();
+    while stopped(pid)? {
+        if started.elapsed() >= HOLD_GRACE {
+            return discard_held(pid, program);
+        }
+        thread::sleep(LAUNCH_POLL);
+    }
+    Ok(pid)
+}
+
+/// The process would otherwise stay stopped forever; it is the one this launch opened.
+fn discard_held(pid: i32, program: &Path) -> Result<i32> {
+    Command::new("/bin/kill").args(["-KILL", &pid.to_string()]).output()?;
+    Err(Error::HeldStopped { program: program.to_path_buf() })
+}
+
+fn stopped(pid: i32) -> Result<bool> {
+    let output = Command::new("/bin/ps").args(["-o", "stat=", "-p", &pid.to_string()]).output()?;
+    Ok(is_stopped(&String::from_utf8_lossy(&output.stdout)))
+}
+
+pub(crate) fn is_stopped(ps_stat: &str) -> bool {
+    ps_stat.trim_start().starts_with('T')
 }
 
 /// The wrapper stays in the system's temporary folder: deleting it while the program starts kills
@@ -78,12 +117,20 @@ fn write_wrapper(dir: &Path, program: &Path, pid_file: &Path, env: &[(String, St
     Ok(bundle)
 }
 
-fn wait_for_pid(pid_file: &Path, program: &Path) -> Result<i32> {
+fn wait_for_pid(pid_file: &Path, program: &Path, launcher_prefix: &str) -> Result<i32> {
     let started = Instant::now();
     loop {
         // A missing or half-written file only means the launcher has not got there yet.
         if let Some(pid) = fs::read_to_string(pid_file).ok().and_then(|text| text.trim().parse().ok()) {
             return Ok(pid);
+        }
+        if started.elapsed() >= HOLD_GRACE {
+            let output = Command::new("/bin/ps").args(["-axo", "pid=,command="]).output()?;
+            for pid in pids_running(&String::from_utf8_lossy(&output.stdout), launcher_prefix) {
+                if stopped(pid)? {
+                    return discard_held(pid, program);
+                }
+            }
         }
         if started.elapsed() >= LAUNCH_DEADLINE {
             return Err(Error::Launch(format!("{} did not start", program.display())));
@@ -127,6 +174,15 @@ pub(crate) fn launcher_script(program: &str, pid_file: &str, env: &[(String, Str
     format!("#!/bin/sh\necho $$ > {}\n{exports}exec {} \"$@\"\n", shell_quote(pid_file), shell_quote(program))
 }
 
+/// Returns the ids of processes whose command line names `prefix`: a script runs as its shell.
+pub(crate) fn pids_running(ps_output: &str, prefix: &str) -> Vec<i32> {
+    ps_output
+        .lines()
+        .filter(|line| line.contains(prefix))
+        .filter_map(|line| line.trim_start().split_once(' ')?.0.parse().ok())
+        .collect()
+}
+
 /// Returns the ids of processes whose executable sits under `prefix`, from `ps -axo pid=,comm=`.
 pub(crate) fn pids_under(ps_output: &str, prefix: &str) -> Vec<i32> {
     ps_output
@@ -166,6 +222,21 @@ mod tests {
             script.find("exec '/app' \"$@\"").unwrap(),
         );
         assert!(set < run);
+    }
+
+    #[test]
+    fn a_launcher_is_found_through_its_shell() {
+        let ps = "  88 /bin/sh /t/Target.app/Contents/MacOS/launcher /x\n  99 /bin/sh /other/launcher\n";
+        assert_eq!(pids_running(ps, "/t/Target.app/Contents/MacOS/"), vec![88]);
+    }
+
+    #[test]
+    fn a_stopped_process_is_told_from_a_running_one() {
+        assert!(is_stopped("T\n"));
+        assert!(is_stopped("  T+  "));
+        assert!(!is_stopped("S\n"));
+        assert!(!is_stopped("R+"));
+        assert!(!is_stopped(""));
     }
 
     #[test]

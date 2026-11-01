@@ -41,6 +41,11 @@ pub trait Backend {
         false
     }
 
+    /// Fails when the system would accept events for the process and never deliver them.
+    fn check_delivery(&self, _pid: i32) -> Result<()> {
+        Ok(())
+    }
+
     /// The file panel the process shows, if any.
     fn panel(&self, _pid: i32) -> Result<Option<Panel>> {
         Err(Error::Unsupported)
