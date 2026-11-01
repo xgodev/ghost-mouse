@@ -100,3 +100,7 @@ GHOST_MOUSE_LIVE=1 cargo test -p ghost-mouse --test live
 ```
 
 The second opens a real window behind the others and sends it every gesture, and completes real file panels. Run with `-- --test-threads=1`, as the panel tests watch the front app. Keep the build folder out of `/tmp`: `a_new_file_is_named_in_a_save_panel` compares paths and the program reports `/tmp` where the test has `/private/tmp`.
+
+## License
+
+MIT, see `LICENSE`.
