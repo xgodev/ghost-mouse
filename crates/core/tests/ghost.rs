@@ -95,7 +95,19 @@ impl Backend for Fake {
 }
 
 fn window(id: u32, title: &str, width: f64, height: f64, on_screen: bool) -> Window {
-    Window { id, pid: 7, owner: "app".into(), title: title.into(), x: -500.0, y: 40.0, width, height, on_screen }
+    Window {
+        id,
+        pid: 7,
+        owner: "app".into(),
+        title: title.into(),
+        x: -500.0,
+        y: 40.0,
+        width,
+        height,
+        on_screen,
+        layer: 0,
+        held_back: false,
+    }
 }
 
 fn at(x: f64, y: f64) -> Point {
@@ -177,6 +189,22 @@ fn main_window_accepts_an_unnamed_window_when_nothing_else_exists() {
         ..Fake::default()
     });
     assert_eq!(ghost.main_window(7).unwrap().id, 1);
+}
+
+#[test]
+fn main_window_never_picks_a_list_floating_over_it() {
+    let list = Window { layer: 101, ..window(2, "list", 900.0, 900.0, true) };
+    let ghost = Ghost::new(Fake { windows: vec![window(1, "", 100.0, 100.0, true), list], ..Fake::default() });
+    assert_eq!(ghost.main_window(7).unwrap().id, 1);
+}
+
+#[test]
+fn a_click_on_a_floating_list_goes_as_events() {
+    let list = Window { layer: 101, ..window(2, "", 290.0, 130.0, false) };
+    let ghost = Ghost::new(Fake { pressable: true, ..Fake::default() });
+    ghost.click(&list, at(10.0, 20.0), Button::Left, 1).unwrap();
+    assert!(ghost.backend().pressed.borrow().is_empty());
+    assert!(!ghost.backend().sent.borrow().is_empty());
 }
 
 #[test]

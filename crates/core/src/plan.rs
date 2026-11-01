@@ -10,6 +10,10 @@ use crate::{
 /// Gap between events of one gesture, so programs that sample their input see each state.
 pub const GAP: Duration = Duration::from_millis(40);
 
+/// How long the pointer stays on a point before a click. A program drawing its own buttons takes
+/// the press only once the pointer has rested there: measured 100 ms missed, 200 ms hit.
+pub const REST: Duration = Duration::from_millis(300);
+
 /// One thing to do while performing a gesture.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Step {
@@ -22,9 +26,9 @@ pub fn hover(at: Point) -> Vec<Step> {
     vec![Step::Send(Input::MouseMove { at }), Step::Wait(GAP)]
 }
 
-/// Moves to the point and presses `clicks` times; the click count rises on each press.
+/// Moves to the point, rests and presses `clicks` times; the click count rises on each press.
 pub fn click(at: Point, button: Button, clicks: u8) -> Vec<Step> {
-    let mut steps = hover(at);
+    let mut steps = vec![Step::Send(Input::MouseMove { at }), Step::Wait(REST)];
     for clicks in 1..=clicks {
         steps.extend([
             Step::Send(Input::MouseDown { at, button, clicks }),

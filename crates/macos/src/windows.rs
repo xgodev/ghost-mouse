@@ -1,4 +1,4 @@
-//! Lists the normal windows the system knows about.
+//! Lists the windows the system knows about.
 
 use std::ffi::c_void;
 
@@ -9,7 +9,10 @@ use objc2_core_graphics::{
     kCGWindowOwnerPID, CGRectMakeWithDictionaryRepresentation, CGWindowListCopyWindowInfo, CGWindowListOption,
 };
 
-/// Returns layer-0 windows, of one process or of all of them.
+use crate::held_back::held_back;
+
+/// Returns the normal windows, of one process or of all of them. For one process it also returns
+/// what floats over them, like an open list; the many panels it never opened stay out.
 pub(crate) fn list(pid: Option<i32>) -> Result<Vec<Window>> {
     let all = CGWindowListCopyWindowInfo(CGWindowListOption::OptionAll, 0)
         .ok_or_else(|| Error::Event("the window server gave no window list".to_string()))?;
@@ -18,7 +21,11 @@ pub(crate) fn list(pid: Option<i32>) -> Result<Vec<Window>> {
         // SAFETY: the index is in range and every element of this list is a dictionary, per the
         // CGWindowListCopyWindowInfo contract; `all` outlives the borrow.
         let info = unsafe { &*all.value_at_index(index).cast::<CFDictionary>() };
-        if let Some(window) = read_window(info).filter(|w| pid.is_none_or(|p| p == w.pid)) {
+        let Some(mut window) = read_window(info).filter(|w| pid.is_none_or(|p| p == w.pid)) else {
+            continue;
+        };
+        window.held_back = held_back(window.id, window.on_screen);
+        if window.layer == 0 || (pid.is_some() && (window.on_screen || window.held_back)) {
             windows.push(window);
         }
     }
@@ -38,9 +45,6 @@ fn read_window(info: &CFDictionary) -> Option<Window> {
             kCGWindowBounds,
         )
     };
-    if read_number(info, layer)? != 0 {
-        return None;
-    }
     let rect = read_rect(info, bounds)?;
     Some(Window {
         id: u32::try_from(read_number(info, number)?).ok()?,
@@ -52,6 +56,8 @@ fn read_window(info: &CFDictionary) -> Option<Window> {
         width: rect.size.width,
         height: rect.size.height,
         on_screen: read_bool(info, on_screen),
+        layer: i32::try_from(read_number(info, layer)?).ok()?,
+        held_back: false,
     })
 }
 

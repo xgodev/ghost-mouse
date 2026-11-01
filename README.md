@@ -45,6 +45,23 @@ Measured on macOS 26 with a test program behind another app: the cursor did not 
 
 Measured on macOS with another app in front: a Rust + Slint app, a native Mac app (Calculator) and an Electron app (VS Code). Clicks, drag, keys, shortcuts, accented text and pictures all land. Double, right and middle clicks, hover and scroll were measured on a test window behind the others.
 
+A click rests the pointer on the point for 300 ms before pressing, because a program drawing its own buttons only takes the press once the pointer has rested: on Creality Print's Slice plate, 100 ms missed and 200 ms hit.
+
+A single left click on a web page inside a window goes through Accessibility, which needs that permission and may take up to 2 s the first time. The page gets the click but no hover. Measured on a test page and on a button of Creality Print's Send to Lan Printer page; its Start Print was not pressed, because a real printer was selected. A switch on that same page (Print Calibration) did not change, so such a press is not proven for every control.
+
+### Lists a program opens
+
+A list a program opens as its own panel can stay off the screen while the program is not in front. It is open all the same, so it can be photographed and clicked:
+
+```bash
+ghost-mouse click --pid 74110 --at 833,295
+ghost-mouse windows --pid 74110
+ghost-mouse shot --pid 74110 --window 951 list.png
+ghost-mouse click --pid 74110 --window 951 --at 100,90
+```
+
+`windows --pid` shows it with a `layer` other than 0 and, while it is off the screen, `held_back: true`; a list on the screen shows `on_screen: true` instead. It is never taken for the main window. Telling an open list from the panels a program never opened takes a private tag of the window server (`SLSGetWindowTags`, measured on macOS 26); without it, `held_back` stays false. Measured on Creality Print's profile list, behind another app: the list was read from its picture, a row was chosen and the program's layer height followed it.
+
 ## What it does not do
 
 - Windows and Linux have no backend yet: every command answers that the system is not supported.
@@ -82,4 +99,4 @@ cargo test --workspace
 GHOST_MOUSE_LIVE=1 cargo test -p ghost-mouse --test live
 ```
 
-The second opens a real window behind the others and sends it every gesture, and completes real file panels. Run with `-- --test-threads=1`, as the panel tests watch the front app.
+The second opens a real window behind the others and sends it every gesture, and completes real file panels. Run with `-- --test-threads=1`, as the panel tests watch the front app. Keep the build folder out of `/tmp`: `a_new_file_is_named_in_a_save_panel` compares paths and the program reports `/tmp` where the test has `/private/tmp`.

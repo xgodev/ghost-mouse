@@ -1,5 +1,7 @@
 //! Each gesture becomes the events a real hand would produce, in order.
 
+use std::time::Duration;
+
 use ghost_mouse_core::{
     plan::{self, Step},
     Button, Chord, Input, Key, Modifiers, Point,
@@ -45,6 +47,15 @@ fn double_click_counts_up() {
             Input::MouseUp { at: p, button: Button::Right, clicks: 2 },
         ]
     );
+}
+
+#[test]
+fn a_click_rests_on_the_point_before_pressing() {
+    let steps = plan::click(at(1.0, 2.0), Button::Left, 1);
+    let down = steps.iter().position(|s| matches!(s, Step::Send(Input::MouseDown { .. }))).unwrap();
+    let rested: Duration =
+        steps[..down].iter().filter_map(|s| if let Step::Wait(time) = s { Some(*time) } else { None }).sum();
+    assert!(rested >= plan::REST, "{rested:?}");
 }
 
 #[test]

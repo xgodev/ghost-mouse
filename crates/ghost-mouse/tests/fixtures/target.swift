@@ -20,7 +20,10 @@ final class V: NSView {
     override var acceptsFirstResponder: Bool { true }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     override func draw(_ r: NSRect) { NSColor.systemGreen.setFill(); bounds.fill() }
-    override func mouseDown(with e: NSEvent) { log("down left \(spot(e, window)) clicks=\(e.clickCount)") }
+    override func mouseDown(with e: NSEvent) {
+        log("down left \(spot(e, window)) clicks=\(e.clickCount)")
+        if let mode = ProcessInfo.processInfo.environment["GHOST_TARGET_LIST"], let window { openList(over: window, staysVisible: mode == "stays") }
+    }
     override func mouseUp(with e: NSEvent) { log("up left \(spot(e, window))") }
     override func rightMouseDown(with e: NSEvent) { log("down right \(spot(e, window)) clicks=\(e.clickCount)") }
     override func otherMouseDown(with e: NSEvent) { log("down middle \(spot(e, window)) button=\(e.buttonNumber)") }
@@ -29,6 +32,26 @@ final class V: NSView {
     override func scrollWheel(with e: NSEvent) { log("scroll dx=\(Int(e.deltaX)) dy=\(Int(e.deltaY))") }
     override func keyDown(with e: NSEvent) { log("key chars=\(e.characters ?? "") code=\(e.keyCode) cmd=\(e.modifierFlags.contains(.command)) shift=\(e.modifierFlags.contains(.shift))") }
 }
+
+final class ListView: NSView {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override func draw(_ r: NSRect) { NSColor.systemBlue.setFill(); bounds.fill() }
+    override func mouseDown(with e: NSEvent) { log("list down \(spot(e, window))") }
+    override func mouseUp(with e: NSEvent) { window?.orderOut(nil) }
+}
+
+/// A list like a program's own drop-down: a panel over the window, which AppKit keeps off the screen
+/// while the program is not in front unless GHOST_TARGET_LIST says it stays.
+func openList(over w: NSWindow, staysVisible: Bool) {
+    let list = NSPanel(contentRect: NSRect(x: w.frame.minX, y: w.frame.minY, width: 120, height: 90), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+    list.level = .popUpMenu
+    list.contentView = ListView(frame: NSRect(x: 0, y: 0, width: 120, height: 90))
+    list.hidesOnDeactivate = !staysVisible
+    list.orderFront(nil)
+    lists.append(list)
+    log("list open")
+}
+var lists: [NSPanel] = []
 
 let app = NSApplication.shared
 app.setActivationPolicy(.accessory)

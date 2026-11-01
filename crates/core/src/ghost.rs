@@ -61,7 +61,7 @@ impl<B: Backend> Ghost<B> {
         self.backend
             .windows(Some(pid))?
             .into_iter()
-            .filter(|w| w.on_screen && area(w) > 0.0)
+            .filter(|w| w.layer == 0 && w.on_screen && area(w) > 0.0)
             .max_by(|a, b| (!a.title.is_empty()).cmp(&!b.title.is_empty()).then_with(|| area(a).total_cmp(&area(b))))
             .ok_or(Error::NoWindow { pid })
     }
@@ -129,7 +129,8 @@ impl<B: Backend> Ghost<B> {
         if clicks == 0 {
             return Err(Error::Invalid { what: "click count", value: clicks.to_string() });
         }
-        if button == Button::Left && clicks == 1 && self.backend.press_at(window, at) {
+        // Pressing goes by the system's own windows and would reach the one under a floating list.
+        if window.layer == 0 && button == Button::Left && clicks == 1 && self.backend.press_at(window, at) {
             return Ok(());
         }
         self.run(window, plan::click(at, button, clicks))

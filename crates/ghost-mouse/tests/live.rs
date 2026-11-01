@@ -174,6 +174,85 @@ fn a_program_that_grabs_the_front_gives_it_back() {
     assert_ne!(front_app(), window.owner);
 }
 
+fn floating_list(pid: i32) -> Window {
+    let started = Instant::now();
+    loop {
+        if let Some(list) = system().windows(Some(pid)).unwrap().into_iter().find(|w| w.layer != 0) {
+            return list;
+        }
+        assert!(started.elapsed() < Duration::from_secs(5), "the program's list never showed in the window list");
+        thread::sleep(Duration::from_millis(20));
+    }
+}
+
+fn open_with_list(mode: &str) -> (tempfile::TempDir, PathBuf, Window) {
+    let dir = tempfile::tempdir_in(env!("CARGO_TARGET_TMPDIR")).unwrap();
+    let binary = dir.path().join("ghost-target");
+    let source = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/target.swift");
+    let built = Command::new("/usr/bin/swiftc").arg(source).arg("-o").arg(&binary).status().unwrap();
+    assert!(built.success());
+    let log = dir.path().join("events.log");
+    let launch = Launch {
+        program: binary,
+        args: vec![log.to_string_lossy().into_owned()],
+        env: vec![("GHOST_TARGET_LIST".into(), mode.into())],
+    };
+    let window = system().open(&launch, Duration::from_secs(10)).unwrap();
+    (dir, log, window)
+}
+
+#[test]
+fn a_list_macos_keeps_off_the_screen_can_be_seen_and_clicked() {
+    if std::env::var_os("GHOST_MOUSE_LIVE").is_none() {
+        eprintln!("SKIPPED: set GHOST_MOUSE_LIVE=1 to open a real window");
+        return;
+    }
+    let _turn = window_turn();
+    let ghost = system();
+    let (dir, log, window) = open_with_list("hidden");
+    let _kill = KillOnDrop(window.pid);
+
+    ghost.click(&window, at(180.0, 112.0), Button::Left, 1).unwrap();
+    wait_for_line(&log, "list open");
+    let list = floating_list(window.pid);
+    assert!(list.held_back && !list.on_screen, "{list:?}");
+    assert_eq!(ghost.main_window(window.pid).unwrap().id, window.id);
+
+    let shot = ghost.shot(&list, &dir.path().join("list.png")).unwrap();
+    assert!(shot.pixel_width > 0);
+
+    ghost.click(&list, at(20.0, 30.0), Button::Left, 1).unwrap();
+    wait_for_line(&log, "list down x=20 y=30");
+    assert_cursor_is_not_on(&list, at(20.0, 30.0));
+
+    let started = Instant::now();
+    while ghost.windows(Some(window.pid)).unwrap().iter().any(|w| w.id == list.id) {
+        assert!(started.elapsed() < Duration::from_secs(5), "a closed list stayed in the window list");
+        thread::sleep(Duration::from_millis(20));
+    }
+    assert_ne!(front_app(), window.owner);
+    let events = fs::read_to_string(&log).unwrap();
+    assert!(!events.contains("became-active"), "the target took the focus:\n{events}");
+}
+
+#[test]
+fn a_list_on_the_screen_is_listed_but_never_taken_for_the_main_window() {
+    if std::env::var_os("GHOST_MOUSE_LIVE").is_none() {
+        eprintln!("SKIPPED: set GHOST_MOUSE_LIVE=1 to open a real window");
+        return;
+    }
+    let _turn = window_turn();
+    let ghost = system();
+    let (_dir, log, window) = open_with_list("stays");
+    let _kill = KillOnDrop(window.pid);
+
+    ghost.click(&window, at(180.0, 112.0), Button::Left, 1).unwrap();
+    wait_for_line(&log, "list open");
+    let list = floating_list(window.pid);
+    assert!(list.on_screen && !list.held_back, "{list:?}");
+    assert_eq!(ghost.main_window(window.pid).unwrap().id, window.id);
+}
+
 #[test]
 fn a_button_in_a_web_page_is_clicked_behind_the_others() {
     if std::env::var_os("GHOST_MOUSE_LIVE").is_none() {

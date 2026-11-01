@@ -43,4 +43,9 @@ pub struct Window {
     pub width: f64,
     pub height: f64,
     pub on_screen: bool,
+    /// 0 for a normal window; anything else floats over them, like a program's open list.
+    pub layer: i32,
+    /// Open, but kept off the screen by the system while the program is not in front. It takes
+    /// clicks and pictures all the same.
+    pub held_back: bool,
 }
