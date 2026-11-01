@@ -129,6 +129,9 @@ impl<B: Backend> Ghost<B> {
         if clicks == 0 {
             return Err(Error::Invalid { what: "click count", value: clicks.to_string() });
         }
+        if button == Button::Left && clicks == 1 && self.backend.press_at(window, at) {
+            return Ok(());
+        }
         self.run(window, plan::click(at, button, clicks))
     }
 

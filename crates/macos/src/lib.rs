@@ -3,17 +3,19 @@
 #![cfg(target_os = "macos")]
 
 mod bundle;
+mod element;
 mod events;
 mod front;
 mod location;
 mod panel;
 mod virtual_keys;
+mod web;
 mod windows;
 
 use std::{path::Path, process::Command, thread, time::Duration};
 
 pub use events::cursor_position;
-use ghost_mouse_core::{Backend, Error, Input, Launch, Panel, Result, Window};
+use ghost_mouse_core::{Backend, Error, Input, Launch, Panel, Point, Result, Window};
 
 /// The system backend for macOS.
 #[derive(Debug, Default, Clone, Copy)]
@@ -53,6 +55,10 @@ impl Backend for MacBackend {
 
     fn activate(&self, pid: i32) -> Result<()> {
         front::activate(pid)
+    }
+
+    fn press_at(&self, window: &Window, at: Point) -> bool {
+        web::press(window, at)
     }
 
     fn panel(&self, pid: i32) -> Result<Option<Panel>> {

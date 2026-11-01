@@ -4,7 +4,7 @@ use std::{path::Path, path::PathBuf, time::Duration};
 
 use crate::{
     error::{Error, Result},
-    geometry::Window,
+    geometry::{Point, Window},
     input::Input,
     panel::Panel,
 };
@@ -34,6 +34,12 @@ pub trait Backend {
     fn front_pid(&self) -> Option<i32>;
     /// Puts a process back in front.
     fn activate(&self, pid: i32) -> Result<()>;
+
+    /// Presses what sits at the point, for what events cannot reach behind other apps; `false` leaves
+    /// the click to events.
+    fn press_at(&self, _window: &Window, _at: Point) -> bool {
+        false
+    }
 
     /// The file panel the process shows, if any.
     fn panel(&self, _pid: i32) -> Result<Option<Panel>> {

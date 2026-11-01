@@ -174,6 +174,36 @@ fn a_program_that_grabs_the_front_gives_it_back() {
     assert_ne!(front_app(), window.owner);
 }
 
+#[test]
+fn a_button_in_a_web_page_is_clicked_behind_the_others() {
+    if std::env::var_os("GHOST_MOUSE_LIVE").is_none() {
+        eprintln!("SKIPPED: set GHOST_MOUSE_LIVE=1 to open a real window");
+        return;
+    }
+    let _turn = window_turn();
+    let dir = tempfile::tempdir_in(env!("CARGO_TARGET_TMPDIR")).unwrap();
+    let binary = dir.path().join("ghost-web");
+    let source = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/web.swift");
+    let built = Command::new("/usr/bin/swiftc").arg(source).arg("-o").arg(&binary).status().unwrap();
+    assert!(built.success());
+    let log = dir.path().join("events.log");
+
+    let ghost = system();
+    let launch = Launch { program: binary, args: vec![log.to_string_lossy().into_owned()], env: vec![] };
+    let window = ghost.open(&launch, Duration::from_secs(10)).unwrap();
+    let _kill = KillOnDrop(window.pid);
+    wait_for_line(&log, "ready");
+
+    let button = at(180.0, 138.0);
+    ghost.click(&window, button, Button::Left, 1).unwrap();
+    wait_for_line(&log, "page click");
+    assert_cursor_is_not_on(&window, button);
+
+    assert_ne!(front_app(), window.owner);
+    let events = fs::read_to_string(&log).unwrap();
+    assert!(!events.contains("became-active"), "the target took the focus:\n{events}");
+}
+
 /// A program behind the others, showing a native file panel on a small folder tree:
 /// `a/deep/file.txt`, `a/açã.txt`, `b/here.txt`, `b/existing.txt`, `c/` and `.hidden/secret.txt`.
 struct PanelProgram {

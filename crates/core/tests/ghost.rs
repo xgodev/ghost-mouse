@@ -30,9 +30,18 @@ struct Fake {
     activate_fails: bool,
     activated: RefCell<Vec<i32>>,
     waits: Cell<u32>,
+    /// The system can press what sits at any point.
+    pressable: bool,
+    pressed: RefCell<Vec<(u32, Point)>>,
 }
 
 impl Backend for Fake {
+    fn press_at(&self, window: &Window, at: Point) -> bool {
+        if self.pressable {
+            self.pressed.borrow_mut().push((window.id, at));
+        }
+        self.pressable
+    }
     fn windows(&self, pid: Option<i32>) -> Result<Vec<Window>> {
         if self.empty_answers.get() > 0 {
             self.empty_answers.set(self.empty_answers.get() - 1);
@@ -83,6 +92,41 @@ fn window(id: u32, title: &str, width: f64, height: f64, on_screen: bool) -> Win
 
 fn at(x: f64, y: f64) -> Point {
     Point { x, y }
+}
+
+#[test]
+fn a_click_the_system_can_press_sends_no_events() {
+    let ghost = Ghost::new(Fake { pressable: true, ..Fake::default() });
+    let target = window(1, "x", 100.0, 100.0, true);
+    ghost.click(&target, at(10.0, 20.0), Button::Left, 1).unwrap();
+    assert_eq!(*ghost.backend().pressed.borrow(), vec![(1, at(10.0, 20.0))]);
+    assert!(ghost.backend().sent.borrow().is_empty());
+}
+
+#[test]
+fn a_click_the_system_cannot_press_goes_as_events() {
+    let ghost = Ghost::new(Fake::default());
+    let target = window(1, "x", 100.0, 100.0, true);
+    ghost.click(&target, at(10.0, 20.0), Button::Left, 1).unwrap();
+    assert!(!ghost.backend().sent.borrow().is_empty());
+}
+
+#[test]
+fn only_a_single_left_click_is_ever_pressed() {
+    let ghost = Ghost::new(Fake { pressable: true, ..Fake::default() });
+    let target = window(1, "x", 100.0, 100.0, true);
+    ghost.click(&target, at(10.0, 20.0), Button::Left, 2).unwrap();
+    ghost.click(&target, at(10.0, 20.0), Button::Right, 1).unwrap();
+    assert!(ghost.backend().pressed.borrow().is_empty());
+    assert!(!ghost.backend().sent.borrow().is_empty());
+}
+
+#[test]
+fn a_point_outside_the_window_is_never_pressed() {
+    let ghost = Ghost::new(Fake { pressable: true, ..Fake::default() });
+    let target = window(1, "x", 100.0, 100.0, true);
+    assert!(ghost.click(&target, at(100.0, 20.0), Button::Left, 1).is_err());
+    assert!(ghost.backend().pressed.borrow().is_empty());
 }
 
 #[test]

@@ -6,14 +6,15 @@
 use std::{
     os::unix::ffi::OsStrExt,
     path::{Path, PathBuf},
-    ptr::NonNull,
     thread,
     time::{Duration, Instant},
 };
 
 use ghost_mouse_core::{Error, Panel, PanelKind, Result};
 use objc2_application_services::{AXIsProcessTrusted, AXUIElement};
-use objc2_core_foundation::{CFArray, CFBoolean, CFRetained, CFString, CFType, CFURL};
+use objc2_core_foundation::{CFArray, CFBoolean, CFString, CFType, CFURL};
+
+use crate::element::Element;
 
 const PATH_BYTES: usize = 4096;
 const UI_POLL: Duration = Duration::from_millis(50);
@@ -28,40 +29,7 @@ const NAME_FIELD: &str = "saveAsNameTextField";
 const CONFIRM_BUTTON: &str = "OKButton";
 const CANCEL_BUTTON: &str = "CancelButton";
 
-/// One element of another program's interface.
-struct Element(CFRetained<AXUIElement>);
-
 impl Element {
-    fn attribute(&self, name: &str) -> Option<CFRetained<CFType>> {
-        let mut value: *const CFType = std::ptr::null();
-        // SAFETY: the out pointer is valid; on success it holds a value this call owns.
-        unsafe {
-            let error = self.0.copy_attribute_value(&CFString::from_str(name), NonNull::from(&mut value));
-            if error.0 != 0 {
-                return None;
-            }
-            NonNull::new(value.cast_mut()).map(|value| CFRetained::from_raw(value))
-        }
-    }
-
-    fn elements(&self, name: &str) -> Vec<Element> {
-        let Some(array) = self.attribute(name).and_then(|value| value.downcast::<CFArray>().ok()) else {
-            return vec![];
-        };
-        // SAFETY: an array of Core Foundation objects is what Accessibility hands out.
-        let array = unsafe { array.cast_unchecked::<CFArray<CFType>>() };
-        array.iter().filter_map(|item| item.downcast::<AXUIElement>().ok()).map(Element).collect()
-    }
-
-    fn text(&self, name: &str) -> Option<String> {
-        Some(self.attribute(name)?.downcast::<CFString>().ok()?.to_string())
-    }
-
-    fn flag(&self, name: &str) -> bool {
-        let value = self.attribute(name).and_then(|value| value.downcast::<CFBoolean>().ok());
-        value.is_some_and(|value| value.as_bool())
-    }
-
     fn set(&self, name: &str, value: &CFType) -> Result<()> {
         // SAFETY: both values are live Core Foundation objects.
         let error = unsafe { self.0.set_attribute_value(&CFString::from_str(name), value) };
@@ -69,17 +37,6 @@ impl Element {
             0 => Ok(()),
             code => Err(Error::Event(format!("the file panel refused {name}: {code}"))),
         }
-    }
-
-    /// The panel may answer with an error for a press that worked, as it closes or changes folder:
-    /// the outcome is what shows whether it landed.
-    fn press(&self) {
-        // SAFETY: the action name is a live string.
-        unsafe { self.0.perform_action(&CFString::from_str("AXPress")) };
-    }
-
-    fn is(&self, role: &str) -> bool {
-        self.text("AXRole").as_deref() == Some(role)
     }
 
     /// Lists are not searched: the file list alone can hold thousands of rows.
