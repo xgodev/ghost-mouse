@@ -49,3 +49,19 @@ pub struct Window {
     /// clicks and pictures all the same.
     pub held_back: bool,
 }
+
+/// A rectangle in window points, counted like [`Point`].
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct Frame {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
+impl Frame {
+    /// The point halfway across and halfway down.
+    pub fn center(&self) -> Point {
+        Point { x: self.x + self.width / 2.0, y: self.y + self.height / 2.0 }
+    }
+}

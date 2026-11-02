@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use thiserror::Error;
 
-use crate::geometry::Point;
+use crate::{controls::lines, geometry::Point};
 
 /// Shorthand for results of this library.
 pub type Result<T> = std::result::Result<T, Error>;
@@ -60,6 +60,24 @@ pub enum Error {
     /// The panel stayed open after cancelling.
     #[error("the file panel of process {pid} stayed open after cancelling")]
     PanelNotCancelled { pid: i32 },
+    /// Nothing in the window matches what was asked for.
+    #[error("window {window} has no control {query}; it has:{}", lines(.candidates))]
+    NoControl { window: u32, query: String, candidates: Vec<String> },
+    /// Several controls match and none was picked.
+    #[error("{} controls match {query} in window {window}; pick one by number, counting from 1:{}", .found.len(), lines(.found))]
+    ManyControls { window: u32, query: String, found: Vec<String> },
+    /// Fewer controls match than the position asked for.
+    #[error("only {count} controls match {query} in window {window}, so there is no number {nth}")]
+    NoNth { window: u32, query: String, nth: usize, count: usize },
+    /// The control is outside what the window shows, so a click would land on something else.
+    #[error("{control} is outside the visible area of window {window}; scroll it into view first")]
+    ControlHidden { window: u32, control: String },
+    /// The system lists no such window among the ones it describes for the process.
+    #[error("window {window} of process {pid} is not among the windows Accessibility describes")]
+    NotDescribed { pid: i32, window: u32 },
+    /// The window holds more elements than are read, so a match could be missed.
+    #[error("window {window} has more than {limit} interface elements")]
+    TooManyControls { window: u32, limit: usize },
     /// This program may not read other programs' windows.
     #[error("this program needs the Accessibility permission (System Settings > Privacy & Security)")]
     NoAccessibility,

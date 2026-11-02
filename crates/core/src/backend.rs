@@ -3,6 +3,7 @@
 use std::{path::Path, path::PathBuf, time::Duration};
 
 use crate::{
+    controls::Control,
     error::{Error, Result},
     geometry::{Point, Window},
     input::Input,
@@ -44,6 +45,12 @@ pub trait Backend {
     /// Fails when the system would accept events for the process and never deliver them.
     fn check_delivery(&self, _pid: i32) -> Result<()> {
         Ok(())
+    }
+
+    /// Every element of the window's interface, in the order the program lists them, with frames in
+    /// window points.
+    fn controls(&self, _window: &Window) -> Result<Vec<Control>> {
+        Err(Error::Unsupported)
     }
 
     /// The file panel the process shows, if any.

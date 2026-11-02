@@ -12,7 +12,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use ghost_mouse::{cursor_position, system, Backend, Button, Error, Launch, Point, Window};
+use ghost_mouse::{cursor_position, system, Backend, Button, Control, Error, Launch, Point, Query, Window};
 
 static WINDOW_TURN: Mutex<()> = Mutex::new(());
 
@@ -66,7 +66,7 @@ fn every_gesture_lands_without_touching_cursor_or_front_app() {
         return;
     }
     let _turn = window_turn();
-    let dir = tempfile::tempdir_in(env!("CARGO_TARGET_TMPDIR")).unwrap();
+    let dir = tempfile::tempdir().unwrap();
     let binary = dir.path().join("ghost-target");
     let source = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/target.swift");
     let built = Command::new("/usr/bin/swiftc").arg(source).arg("-o").arg(&binary).status().unwrap();
@@ -128,7 +128,7 @@ fn a_bare_program_receives_the_library_path_it_was_given() {
         return;
     }
     let _turn = window_turn();
-    let dir = tempfile::tempdir_in(env!("CARGO_TARGET_TMPDIR")).unwrap();
+    let dir = tempfile::tempdir().unwrap();
     let binary = dir.path().join("ghost-target");
     let source = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/target.swift");
     let built = Command::new("/usr/bin/swiftc").arg(source).arg("-o").arg(&binary).status().unwrap();
@@ -154,7 +154,7 @@ fn a_program_that_grabs_the_front_gives_it_back() {
         return;
     }
     let _turn = window_turn();
-    let dir = tempfile::tempdir_in(env!("CARGO_TARGET_TMPDIR")).unwrap();
+    let dir = tempfile::tempdir().unwrap();
     let binary = dir.path().join("ghost-target");
     let source = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/target.swift");
     let built = Command::new("/usr/bin/swiftc").arg(source).arg("-o").arg(&binary).status().unwrap();
@@ -186,7 +186,7 @@ fn floating_list(pid: i32) -> Window {
 }
 
 fn open_with_list(mode: &str) -> (tempfile::TempDir, PathBuf, Window) {
-    let dir = tempfile::tempdir_in(env!("CARGO_TARGET_TMPDIR")).unwrap();
+    let dir = tempfile::tempdir().unwrap();
     let binary = dir.path().join("ghost-target");
     let source = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/target.swift");
     let built = Command::new("/usr/bin/swiftc").arg(source).arg("-o").arg(&binary).status().unwrap();
@@ -260,7 +260,7 @@ fn a_button_in_a_web_page_is_clicked_behind_the_others() {
         return;
     }
     let _turn = window_turn();
-    let dir = tempfile::tempdir_in(env!("CARGO_TARGET_TMPDIR")).unwrap();
+    let dir = tempfile::tempdir().unwrap();
     let binary = dir.path().join("ghost-web");
     let source = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/web.swift");
     let built = Command::new("/usr/bin/swiftc").arg(source).arg("-o").arg(&binary).status().unwrap();
@@ -283,6 +283,105 @@ fn a_button_in_a_web_page_is_clicked_behind_the_others() {
     assert!(!events.contains("became-active"), "the target took the focus:\n{events}");
 }
 
+/// Builds a test window from `tests/fixtures/<name>.swift`, opens it behind the others and waits until it is ready.
+fn open_fixture(name: &str, ready: &str) -> (tempfile::TempDir, PathBuf, Window, KillOnDrop) {
+    let dir = tempfile::tempdir().unwrap();
+    let binary = dir.path().join(format!("ghost-{name}"));
+    let source = format!("{}/tests/fixtures/{name}.swift", env!("CARGO_MANIFEST_DIR"));
+    let built = Command::new("/usr/bin/swiftc").arg(source).arg("-o").arg(&binary).status().unwrap();
+    assert!(built.success());
+    let log = dir.path().join("events.log");
+    let launch = Launch { program: binary, args: vec![log.to_string_lossy().into_owned()], env: vec![] };
+    let window = system().open(&launch, Duration::from_secs(10)).unwrap();
+    let kill = KillOnDrop(window.pid);
+    wait_for_line(&log, ready);
+    (dir, log, window, kill)
+}
+
+fn named(name: &str) -> Query {
+    Query { name: Some(name.into()), role: None }
+}
+
+fn the_one<'a>(controls: &'a [Control], name: &str) -> &'a Control {
+    let found: Vec<_> = controls.iter().filter(|c| c.name.as_deref() == Some(name)).collect();
+    assert_eq!(found.len(), 1, "{name} in {controls:#?}");
+    found[0]
+}
+
+#[test]
+fn controls_are_listed_and_clicked_by_name_behind_the_others() {
+    if std::env::var_os("GHOST_MOUSE_LIVE").is_none() {
+        eprintln!("SKIPPED: set GHOST_MOUSE_LIVE=1 to open a real window");
+        return;
+    }
+    let _turn = window_turn();
+    let (_dir, log, window, _kill) = open_fixture("controls", "ready");
+    let ghost = system();
+    let now = Duration::ZERO;
+
+    let all = ghost.controls(&window, &Query::default(), now).unwrap();
+    let press = the_one(&all, "Press me");
+    assert_eq!((press.role.as_str(), press.enabled, press.visible), ("AXButton", Some(true), true), "{press:?}");
+    let centre = press.frame.center();
+    assert!(centre.x > 0.0 && centre.x < window.width && centre.y > 0.0 && centre.y < window.height, "{press:?}");
+    let remember = the_one(&all, "Remember");
+    assert_eq!((remember.role.as_str(), remember.checked), ("AXCheckBox", Some(false)), "{remember:?}");
+    assert!(!the_one(&all, "Far away").visible);
+
+    ghost.click_control(&window, &named("Press me"), None, Button::Left, 1, now).unwrap();
+    wait_for_line(&log, "pressed Press me");
+    assert_cursor_is_not_on(&window, centre);
+    ghost.click_control(&window, &named("Remember"), None, Button::Left, 1, now).unwrap();
+    wait_for_line(&log, "checked Remember true");
+    let checked = Query { name: Some("Remember".into()), role: Some("AXCheckBox".into()) };
+    assert_eq!(ghost.controls(&window, &checked, now).unwrap()[0].checked, Some(true));
+
+    let error = ghost.click_control(&window, &named("Same"), None, Button::Left, 1, now).unwrap_err();
+    assert!(matches!(&error, Error::ManyControls { found, .. } if found.len() == 2), "{error}");
+    ghost.click_control(&window, &named("Same"), Some(2), Button::Left, 1, now).unwrap();
+    wait_for_line(&log, "pressed Same 2");
+    let error = ghost.click_control(&window, &named("Far away"), None, Button::Left, 1, now).unwrap_err();
+    assert!(matches!(error, Error::ControlHidden { .. }), "{error}");
+    let error = ghost.click_control(&window, &named("Nope"), None, Button::Left, 1, now).unwrap_err();
+    assert!(matches!(&error, Error::NoControl { candidates, .. } if candidates.iter().any(|c| c.contains("Press me"))));
+    ghost.hover_control(&window, &named("Press me"), None, now).unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_ghost-mouse"))
+        .args(["controls", "--pid", &window.pid.to_string(), "--name", "Remember", "--role", "AXCheckBox"])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    let listed: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(listed.as_array().map(Vec::len), Some(1), "{listed}");
+    assert_eq!(listed[0]["checked"], true, "{listed}");
+    let output = Command::new(env!("CARGO_BIN_EXE_ghost-mouse"))
+        .args(["click", "--pid", &window.pid.to_string(), "--name", "Same", "--nth", "1"])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    wait_for_line(&log, "pressed Same 1");
+
+    assert_ne!(front_app(), window.owner);
+    let events = fs::read_to_string(&log).unwrap();
+    assert!(!events.contains("became-active"), "the target took the focus:\n{events}");
+}
+
+#[test]
+fn a_button_in_a_web_page_is_clicked_by_name_behind_the_others() {
+    if std::env::var_os("GHOST_MOUSE_LIVE").is_none() {
+        eprintln!("SKIPPED: set GHOST_MOUSE_LIVE=1 to open a real window");
+        return;
+    }
+    let _turn = window_turn();
+    let (_dir, log, window, _kill) = open_fixture("web", "ready");
+    let ghost = system();
+    let start = Query { name: Some("Start".into()), role: Some("AXButton".into()) };
+    let found = ghost.click_control(&window, &start, None, Button::Left, 1, Duration::from_secs(5)).unwrap();
+    wait_for_line(&log, "page click");
+    assert_cursor_is_not_on(&window, found.frame.center());
+    assert_ne!(front_app(), window.owner);
+}
+
 /// A program behind the others, showing a native file panel on a small folder tree:
 /// `a/deep/file.txt`, `a/açã.txt`, `b/here.txt`, `b/existing.txt`, `c/` and `.hidden/secret.txt`.
 struct PanelProgram {
@@ -297,7 +396,7 @@ struct PanelProgram {
 
 impl PanelProgram {
     fn open(shows: &str, env: &[&str]) -> Self {
-        let dir = tempfile::tempdir_in(env!("CARGO_TARGET_TMPDIR")).unwrap();
+        let dir = tempfile::tempdir().unwrap();
         let root = dir.path().canonicalize().unwrap();
         for folder in ["a/deep", "b", "c", ".hidden"] {
             fs::create_dir_all(root.join(folder)).unwrap();

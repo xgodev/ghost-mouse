@@ -14,6 +14,8 @@ cargo build --release -p ghost-mouse
 ghost-mouse open /System/Applications/Calculator.app
 ghost-mouse windows --name Calculator
 ghost-mouse click --pid 74110 --at 34,211
+ghost-mouse controls --pid 74110 --role AXButton
+ghost-mouse click --pid 74110 --name 7
 ghost-mouse drag --pid 74110 --from 272,312 --to 429,404
 ghost-mouse scroll --pid 74110 --at 100,100 --dy 3
 ghost-mouse key --pid 74110 cmd+shift+p
@@ -26,6 +28,20 @@ ghost-mouse cancel-file --pid 74110
 Every command prints JSON when it has something to report, and on failure prints `ghost-mouse: <reason>` and exits with 1. Points are window points counted from the window's top-left corner, title bar included. `--window <id>` picks a window other than the program's main one; `shot` also reports the picture's scale, for converting a position read on the picture into a point to click.
 
 As a library, `ghost_mouse::system()` gives the same operations.
+
+## Controls by name
+
+`controls` lists the window's interface as the program describes it to assistive tools: for each element its role as the system names it (`AXButton`, `AXCheckBox`, `AXStaticText`...), its name (the title, or the description when there is no title), its value, the states the program reports (`enabled`, `focused`, `selected`, `checked`, `expanded`), its `frame` in window points, and whether it is `visible`. `--name` and `--role` keep only the elements with exactly that name and role; `--wait-secs` waits for at least one to match.
+
+`click --name` and `hover --name` aim at the centre of the control's frame and go the same way as `--at`, pointer rest included. `--role` narrows the search and `--nth` picks among several matches, counting from 1 in the order `controls` lists them. No match fails with the controls the window has, several matches without `--nth` fail with each one and its position, and a control outside the visible part of the window or of a scrolling area is refused until it is scrolled into view. Reading the controls needs the Accessibility permission for whatever runs the command, and says so when it is missing.
+
+Measured on macOS 26 with each program behind another app, the cursor and the front app untouched:
+
+- Calculator: 37 elements; `7`, `Adicionar`, `8` and `Igual a` clicked by name gave 15. Names come in the system's language.
+- A test window: a button, a checkbox (`checked` follows it), two buttons with the same name picked with `--nth`, and a button scrolled out of sight, refused.
+- A web page in a window: its button found by name and pressed.
+- VS Code 1.143.1: 368 to 399 elements as its panels change. Electron shows its page to assistive tools only when asked; `controls` asks once and waits for it (about 2 s the first time), and it stays on until the program quits. Once asked, VS Code shows its own "screen reader" notice. Its side bar items Explorer, Search, Source Control and Extensions were clicked by name, 7 of 8 landing; the one that missed was the first, right after the page was asked for. Each also has a group of the same name over it, so `--role AXRadioButton` picks the item.
+- JoVee Lut 0.1.0-beta.3, a Rust + Slint app: 49 elements. Read right after the program opened it held 5 unnamed ones, so a click by name there needs `--wait-secs`. Its seven `Começar` buttons are refused without `--nth`; `--nth 1` opened the first step and `Voltar` came back.
 
 ## File panels
 
@@ -99,7 +115,7 @@ cargo test --workspace
 GHOST_MOUSE_LIVE=1 cargo test -p ghost-mouse --test live
 ```
 
-The second opens a real window behind the others and sends it every gesture, and completes real file panels. Run with `-- --test-threads=1`, as the panel tests watch the front app. Keep the build folder out of `/tmp`: `a_new_file_is_named_in_a_save_panel` compares paths and the program reports `/tmp` where the test has `/private/tmp`.
+The second opens a real window behind the others and sends it every gesture, and completes real file panels. Run with `-- --test-threads=1`, as the panel tests watch the front app. Test programs are built in the system's temporary folder: macOS asks before a new program reads an external disk, so on a build folder there every test program waits for that answer and never shows its window.
 
 ## License
 

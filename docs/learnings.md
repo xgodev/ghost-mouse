@@ -1,7 +1,7 @@
 ---
 tags: [ghost-mouse, learnings]
 created: 2026-10-31
-updated: 2026-11-01
+updated: 2026-11-02
 source: claude-code-sessions
 ---
 
@@ -24,3 +24,9 @@ source: claude-code-sessions
 - **Gotcha / invariant:** painel com `hidesOnDeactivate` (o `wxPopupTransientWindow` dos combos do wxWidgets, por exemplo) recebe o `orderFront`, o AppKit diz que está visível, mas o window server o mantém com `kCGWindowIsOnscreen` falso enquanto o programa não está na frente. Ele fica igual aos painéis nunca abertos na lista pública; só o bit `0x2000` de `SLSGetWindowTags` separa (aberto `1000c6002`, fechado `1000c4002`, nunca aberto `1000c0002`). `SLSWindowIsOrderedIn` devolve 0 e não serve.
 - **Why it matters:** o clique chega e a lista abre, só que ninguém vê, e parece que o clique falhou. `screencapture -l<id>` e evento com o número da janela funcionam nela mesmo fora da tela.
 - **Applies to:** botão desenhado pelo próprio programa (ImGui em GL) só aceita a pressão com o ponteiro parado antes: 30 e 100 ms erraram, 200 ms acertou. `AXPress` não serve em painel flutuante: a acessibilidade escolhe a janela mais próxima e apertaria a página embaixo dele.
+
+## 2026-11-02 — Controles pela árvore de acessibilidade
+
+- **Gotcha / invariant:** o Electron (Chromium) só mostra a página à acessibilidade depois de `AXManualAccessibility = true` no elemento do app (VS Code 1.143.1: 13 elementos antes, 368 cerca de 2,1 s depois), e o atributo continua lendo `false` depois de ligado. Quem decide se já pediu é a presença de um `AXWebArea` na janela, não a leitura do atributo. Desligar de novo derruba a árvore, e o clique em página (`AXPress` no web area) para de achar o elemento.
+- **Why it matters:** confiar na leitura fazia cada `controls` religar e esperar 5 s por uma árvore que já estava lá.
+- **Applies to:** a janela de acessibilidade se liga à janela do window server pelo id exato via `_AXUIElementGetWindow` (privado, por `dlsym`), nunca pela mais próxima. `AXUIElementCopyMultipleAttributeValues` lê tudo de um elemento numa ida; atributo ausente volta como `AXValue` do tipo erro. App Slint (AccessKit) dá 49 elementos em 0,04 s com `AXTitle` nos botões; texto estático só tem `AXValue`. Logo depois de abrir, a árvore do Slint tem só 5 elementos sem nome: clique por nome em programa recém-aberto precisa de `--wait-secs`. Programa de teste compilado numa pasta do HD externo fica preso em `open` do `dyld` esperando a permissão de disco removível: compilar na pasta temporária do sistema. O painel de arquivo diz `/var/…` para `/private/var/…`.

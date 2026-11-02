@@ -3,6 +3,7 @@
 #![cfg(target_os = "macos")]
 
 mod bundle;
+mod controls;
 mod element;
 mod events;
 mod front;
@@ -16,7 +17,7 @@ mod windows;
 use std::{path::Path, process::Command, thread, time::Duration};
 
 pub use events::cursor_position;
-use ghost_mouse_core::{Backend, Error, Input, Launch, Panel, Point, Result, Window};
+use ghost_mouse_core::{Backend, Control, Error, Input, Launch, Panel, Point, Result, Window};
 
 /// The system backend for macOS.
 #[derive(Debug, Default, Clone, Copy)]
@@ -64,6 +65,10 @@ impl Backend for MacBackend {
 
     fn check_delivery(&self, pid: i32) -> Result<()> {
         front::check_delivery(pid)
+    }
+
+    fn controls(&self, window: &Window) -> Result<Vec<Control>> {
+        controls::read(window)
     }
 
     fn panel(&self, pid: i32) -> Result<Option<Panel>> {

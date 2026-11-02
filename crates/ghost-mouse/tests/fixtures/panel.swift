@@ -27,9 +27,15 @@ DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
     if env["GHOST_PANEL_ONLY_PNG"] != nil {
         panel.allowedContentTypes = [.png]
     }
+    // The panel says /var for /private/var and may decompose accents; the test compares against the real
+    // folder and the composed form. A new file does not exist yet, so only its folder is resolved.
+    func real(_ url: URL?) -> String {
+        guard let url = url, let folder = realpath(url.deletingLastPathComponent().path, nil) else { return url?.path ?? "" }
+        defer { free(folder) }
+        return (String(cString: folder) + "/" + url.lastPathComponent).precomposedStringWithCanonicalMapping
+    }
     func answer(_ response: NSApplication.ModalResponse) {
-        // The panel may decompose accents; the test compares against the composed form.
-        log(response == .OK ? "chose \((panel.url?.path ?? "").precomposedStringWithCanonicalMapping)" : "cancelled")
+        log(response == .OK ? "chose \(real(panel.url))" : "cancelled")
     }
     log("panel-opening")
     if env["GHOST_PANEL_SHEET"] != nil {

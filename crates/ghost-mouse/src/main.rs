@@ -3,7 +3,7 @@
 use std::{path::PathBuf, process::ExitCode, time::Duration};
 
 use clap::{Args, Parser, Subcommand};
-use ghost_mouse::{system, Button, Chord, Launch, Point, Result, Window};
+use ghost_mouse::{system, Button, Chord, Launch, Point, Query, Result, Window};
 use serde_json::json;
 
 /// Clicks, drags, types and takes pictures of a program, without touching the real mouse.
@@ -22,6 +22,36 @@ struct Target {
     /// Window id from `windows`; defaults to the program's main window.
     #[arg(long)]
     window: Option<u32>,
+}
+
+/// Where the pointer goes: a point, or the centre of a control found by name.
+#[derive(Args)]
+struct Spot {
+    /// Point in the window, in points from its top-left corner.
+    #[arg(long, value_name = "X,Y", required_unless_present = "name", conflicts_with = "name")]
+    at: Option<Point>,
+    /// The control's name, exactly as `controls` prints it.
+    #[arg(long)]
+    name: Option<String>,
+    /// The control's role, exactly as `controls` prints it, such as AXButton.
+    #[arg(long, requires = "name", conflicts_with = "at")]
+    role: Option<String>,
+    /// Which of several matching controls, counting from 1 in the order `controls` lists them.
+    #[arg(long, requires = "name", conflicts_with = "at")]
+    nth: Option<usize>,
+    /// How long to wait for the control to appear; none by default.
+    #[arg(long, requires = "name", conflicts_with = "at")]
+    wait_secs: Option<u64>,
+}
+
+impl Spot {
+    fn query(&self) -> Query {
+        Query { name: self.name.clone(), role: self.role.clone() }
+    }
+
+    fn wait(&self) -> Duration {
+        Duration::from_secs(self.wait_secs.unwrap_or(0))
+    }
 }
 
 #[derive(Subcommand)]
@@ -48,19 +78,33 @@ enum Command {
         #[arg(long)]
         name: Option<String>,
     },
-    /// Rests the pointer over a point of the window.
+    /// Lists the window's interface elements as the program describes them to assistive tools.
+    Controls {
+        #[command(flatten)]
+        target: Target,
+        /// Only elements with exactly this name.
+        #[arg(long)]
+        name: Option<String>,
+        /// Only elements with exactly this role, such as AXButton.
+        #[arg(long)]
+        role: Option<String>,
+        /// How long to wait for at least one element to match.
+        #[arg(long, default_value_t = 0)]
+        wait_secs: u64,
+    },
+    /// Rests the pointer over a point or a control of the window.
     Hover {
         #[command(flatten)]
         target: Target,
-        #[arg(long, value_name = "X,Y")]
-        at: Point,
+        #[command(flatten)]
+        spot: Spot,
     },
-    /// Clicks a point of the window, in points from its top-left corner.
+    /// Clicks a point of the window, in points from its top-left corner, or a control found by name.
     Click {
         #[command(flatten)]
         target: Target,
-        #[arg(long, value_name = "X,Y")]
-        at: Point,
+        #[command(flatten)]
+        spot: Spot,
         /// left, right or middle.
         #[arg(long, default_value = "left")]
         button: Button,
@@ -156,9 +200,25 @@ fn run(command: Command) -> Result<Option<serde_json::Value>> {
             }
             Ok(Some(json!(windows)))
         }
-        Command::Hover { target, at } => ghost.hover(&window(&target)?, at).map(|()| None),
-        Command::Click { target, at, button, count } => {
-            ghost.click(&window(&target)?, at, button, count).map(|()| None)
+        Command::Controls { target, name, role, wait_secs } => {
+            let query = Query { name, role };
+            Ok(Some(json!(ghost.controls(&window(&target)?, &query, Duration::from_secs(wait_secs))?)))
+        }
+        Command::Hover { target, spot } => {
+            let window = window(&target)?;
+            match spot.at {
+                Some(at) => ghost.hover(&window, at),
+                None => ghost.hover_control(&window, &spot.query(), spot.nth, spot.wait()).map(drop),
+            }
+            .map(|()| None)
+        }
+        Command::Click { target, spot, button, count } => {
+            let window = window(&target)?;
+            match spot.at {
+                Some(at) => ghost.click(&window, at, button, count),
+                None => ghost.click_control(&window, &spot.query(), spot.nth, button, count, spot.wait()).map(drop),
+            }
+            .map(|()| None)
         }
         Command::Drag { target, from, to, button, steps } => {
             ghost.drag(&window(&target)?, from, to, button, steps).map(|()| None)
