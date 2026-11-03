@@ -42,6 +42,12 @@ pub trait Backend {
         false
     }
 
+    /// Scrolls what sits at the point, for what events cannot reach behind other apps; `false` leaves
+    /// the scroll to events.
+    fn scroll_at(&self, _window: &Window, _at: Point, _dx: i32, _dy: i32) -> bool {
+        false
+    }
+
     /// Fails when the system would accept events for the process and never deliver them.
     fn check_delivery(&self, _pid: i32) -> Result<()> {
         Ok(())

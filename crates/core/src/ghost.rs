@@ -146,6 +146,9 @@ impl<B: Backend> Ghost<B> {
     /// Scrolls at a point of the window.
     pub fn scroll(&self, window: &Window, at: Point, dx: i32, dy: i32) -> Result<()> {
         inside(window, at)?;
+        if window.layer == 0 && self.backend.scroll_at(window, at, dx, dy) {
+            return Ok(());
+        }
         self.run(window, plan::scroll(at, dx, dy))
     }
 

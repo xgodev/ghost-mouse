@@ -33,6 +33,9 @@ struct Fake {
     /// The system can press what sits at any point.
     pressable: bool,
     pressed: RefCell<Vec<(u32, Point)>>,
+    /// The system can scroll what sits at any point.
+    scrollable: bool,
+    scrolled: RefCell<Vec<(u32, Point, i32, i32)>>,
     /// The system says events to this program go nowhere.
     undeliverable: bool,
 }
@@ -49,6 +52,12 @@ impl Backend for Fake {
             self.pressed.borrow_mut().push((window.id, at));
         }
         self.pressable
+    }
+    fn scroll_at(&self, window: &Window, at: Point, dx: i32, dy: i32) -> bool {
+        if self.scrollable {
+            self.scrolled.borrow_mut().push((window.id, at, dx, dy));
+        }
+        self.scrollable
     }
     fn windows(&self, pid: Option<i32>) -> Result<Vec<Window>> {
         if self.empty_answers.get() > 0 {
@@ -196,6 +205,32 @@ fn main_window_never_picks_a_list_floating_over_it() {
     let list = Window { layer: 101, ..window(2, "list", 900.0, 900.0, true) };
     let ghost = Ghost::new(Fake { windows: vec![window(1, "", 100.0, 100.0, true), list], ..Fake::default() });
     assert_eq!(ghost.main_window(7).unwrap().id, 1);
+}
+
+#[test]
+fn a_scroll_the_system_can_do_sends_no_events() {
+    let ghost = Ghost::new(Fake { scrollable: true, ..Fake::default() });
+    let target = window(1, "x", 100.0, 100.0, true);
+    ghost.scroll(&target, at(10.0, 20.0), 0, 3).unwrap();
+    assert_eq!(*ghost.backend().scrolled.borrow(), vec![(1, at(10.0, 20.0), 0, 3)]);
+    assert!(ghost.backend().sent.borrow().is_empty());
+}
+
+#[test]
+fn a_scroll_the_system_cannot_do_goes_as_events() {
+    let ghost = Ghost::new(Fake::default());
+    let target = window(1, "x", 100.0, 100.0, true);
+    ghost.scroll(&target, at(10.0, 20.0), 0, 3).unwrap();
+    assert!(!ghost.backend().sent.borrow().is_empty());
+}
+
+#[test]
+fn a_scroll_on_a_floating_list_or_outside_the_window_is_never_done_by_the_system() {
+    let list = Window { layer: 101, ..window(2, "", 290.0, 130.0, false) };
+    let ghost = Ghost::new(Fake { scrollable: true, ..Fake::default() });
+    ghost.scroll(&list, at(10.0, 20.0), 0, 3).unwrap();
+    assert!(ghost.scroll(&window(1, "x", 100.0, 100.0, true), at(100.0, 20.0), 0, 3).is_err());
+    assert!(ghost.backend().scrolled.borrow().is_empty());
 }
 
 #[test]

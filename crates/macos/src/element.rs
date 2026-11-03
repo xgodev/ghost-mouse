@@ -54,6 +54,28 @@ impl Element {
         unsafe { self.0.set_attribute_value(&CFString::from_str(name), CFBoolean::new(true)) }.0 == 0
     }
 
+    /// Writes a text and says whether the program took it.
+    pub(crate) fn set_text(&self, name: &str, text: &str) -> bool {
+        // SAFETY: both values are live Core Foundation objects.
+        unsafe { self.0.set_attribute_value(&CFString::from_str(name), &CFString::from_str(text)) }.0 == 0
+    }
+
+    /// The names of the actions the element takes.
+    pub(crate) fn actions(&self) -> Vec<String> {
+        let mut names: *const CFArray = std::ptr::null();
+        // SAFETY: the out pointer is valid; on success it holds an array this call owns.
+        let names = unsafe {
+            let error = self.0.copy_action_names(NonNull::from(&mut names));
+            match NonNull::new(names.cast_mut()) {
+                Some(names) if error.0 == 0 => CFRetained::from_raw(names),
+                _ => return vec![],
+            }
+        };
+        // SAFETY: an array of Core Foundation objects is what Accessibility hands out.
+        let names = unsafe { names.cast_unchecked::<CFType>() };
+        names.iter().filter_map(|name| name.downcast::<CFString>().ok()).map(|name| name.to_string()).collect()
+    }
+
     pub(crate) fn flag(&self, name: &str) -> bool {
         let value = self.attribute(name).and_then(|value| value.downcast::<CFBoolean>().ok());
         value.is_some_and(|value| value.as_bool())
@@ -71,8 +93,13 @@ impl Element {
     /// `true` when the element answered without an error. A file panel may answer with one for a press
     /// that worked, as it closes or changes folder: there, the outcome is what shows whether it landed.
     pub(crate) fn press(&self) -> bool {
+        self.perform("AXPress")
+    }
+
+    /// `true` when the element answered the action without an error.
+    pub(crate) fn perform(&self, action: &str) -> bool {
         // SAFETY: the action name is a live string.
-        unsafe { self.0.perform_action(&CFString::from_str("AXPress")) }.0 == 0
+        unsafe { self.0.perform_action(&CFString::from_str(action)) }.0 == 0
     }
 }
 

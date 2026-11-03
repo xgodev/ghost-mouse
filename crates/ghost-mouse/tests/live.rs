@@ -575,3 +575,79 @@ fn a_file_the_panel_filters_out_is_refused() {
     assert!(matches!(error, Error::PanelRefused), "{error}");
     system().cancel_file_panel(program.pid, PANEL_WAIT).unwrap();
 }
+
+/// Builds `tests/fixtures/catalyst.swift` as an iPad app run on the Mac, the kind WhatsApp for Mac is.
+fn open_catalyst() -> (tempfile::TempDir, PathBuf, Window, KillOnDrop) {
+    let dir = tempfile::tempdir().unwrap();
+    let app = dir.path().join("Catalyst.app");
+    fs::create_dir_all(app.join("Contents/MacOS")).unwrap();
+    fs::write(
+        app.join("Contents/Info.plist"),
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleExecutable</key><string>catalyst</string>
+<key>CFBundleIdentifier</key><string>dev.xgodev.ghost-mouse.catalyst</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+<key>LSMinimumSystemVersion</key><string>14.0</string>
+<key>UIApplicationSceneManifest</key><dict><key>UIApplicationSupportsMultipleScenes</key><false/></dict>
+</dict></plist>
+"#,
+    )
+    .unwrap();
+    let sdk = Command::new("/usr/bin/xcrun").args(["--sdk", "macosx", "--show-sdk-path"]).output().unwrap();
+    let sdk = String::from_utf8(sdk.stdout).unwrap().trim().to_string();
+    let ios = format!("{sdk}/System/iOSSupport");
+    let source = format!("{}/tests/fixtures/catalyst.swift", env!("CARGO_MANIFEST_DIR"));
+    let built = Command::new("/usr/bin/xcrun")
+        .args(["swiftc", "-target", "arm64-apple-ios17.0-macabi", "-sdk", &sdk])
+        .args(["-Fsystem", &format!("{ios}/System/Library/Frameworks")])
+        .arg(format!("-I{ios}/usr/lib/swift"))
+        .arg(format!("-L{ios}/usr/lib/swift"))
+        .arg(source)
+        .arg("-o")
+        .arg(app.join("Contents/MacOS/catalyst"))
+        .status()
+        .unwrap();
+    assert!(built.success());
+    let signed = Command::new("/usr/bin/codesign").args(["-s", "-", "--force"]).arg(&app).status().unwrap();
+    assert!(signed.success());
+    let log = dir.path().join("events.log");
+    let env = vec![("GHOST_TARGET_LOG".to_string(), log.to_string_lossy().into_owned())];
+    let window = system().open(&Launch { program: app, args: vec![], env }, Duration::from_secs(20)).unwrap();
+    let kill = KillOnDrop(window.pid);
+    wait_for_line(&log, "ready");
+    (dir, log, window, kill)
+}
+
+#[test]
+fn an_ipad_app_on_the_mac_is_clicked_typed_and_scrolled_behind_the_others() {
+    if std::env::var_os("GHOST_MOUSE_LIVE").is_none() {
+        eprintln!("SKIPPED: set GHOST_MOUSE_LIVE=1 to open a real window");
+        return;
+    }
+    let _turn = window_turn();
+    let (_dir, log, window, _kill) = open_catalyst();
+    let ghost = system();
+    let now = Duration::ZERO;
+    let all = ghost.controls(&window, &Query::default(), now).unwrap();
+
+    let field = the_one(&all, "Search").frame.center();
+    ghost.click(&window, field, Button::Left, 1).unwrap();
+    wait_for_line(&log, "field focused=true");
+    assert_cursor_is_not_on(&window, field);
+    ghost.type_text(&window, "Wellington").unwrap();
+    wait_for_line(&log, "text=Wellington");
+
+    let row = the_one(&all, "Row 2").frame.center();
+    ghost.click(&window, row, Button::Left, 1).unwrap();
+    wait_for_line(&log, "selected Row 2");
+    ghost.scroll(&window, row, 0, 3).unwrap();
+    wait_for_line(&log, "scrolled y=");
+    assert_cursor_is_not_on(&window, row);
+    ghost.click_control(&window, &named("Go"), None, Button::Left, 1, now).unwrap();
+    wait_for_line(&log, "pressed Go");
+
+    // UIKit calls its own scene active at launch even behind the others, so only the front app tells.
+    assert_ne!(front_app(), window.owner);
+}

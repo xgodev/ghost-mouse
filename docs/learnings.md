@@ -1,7 +1,7 @@
 ---
 tags: [ghost-mouse, learnings]
 created: 2026-10-31
-updated: 2026-11-02
+updated: 2026-11-03
 source: claude-code-sessions
 ---
 
@@ -30,3 +30,9 @@ source: claude-code-sessions
 - **Gotcha / invariant:** o Electron (Chromium) só mostra a página à acessibilidade depois de `AXManualAccessibility = true` no elemento do app (VS Code 1.143.1: 13 elementos antes, 368 cerca de 2,1 s depois), e o atributo continua lendo `false` depois de ligado. Quem decide se já pediu é a presença de um `AXWebArea` na janela, não a leitura do atributo. Desligar de novo derruba a árvore, e o clique em página (`AXPress` no web area) para de achar o elemento.
 - **Why it matters:** confiar na leitura fazia cada `controls` religar e esperar 5 s por uma árvore que já estava lá.
 - **Applies to:** a janela de acessibilidade se liga à janela do window server pelo id exato via `_AXUIElementGetWindow` (privado, por `dlsym`), nunca pela mais próxima. `AXUIElementCopyMultipleAttributeValues` lê tudo de um elemento numa ida; atributo ausente volta como `AXValue` do tipo erro. App Slint (AccessKit) dá 49 elementos em 0,04 s com `AXTitle` nos botões; texto estático só tem `AXValue`. Logo depois de abrir, a árvore do Slint tem só 5 elementos sem nome: clique por nome em programa recém-aberto precisa de `--wait-secs`. Programa de teste compilado numa pasta do HD externo fica preso em `open` do `dyld` esperando a permissão de disco removível: compilar na pasta temporária do sistema. O painel de arquivo diz `/var/…` para `/private/var/…`.
+
+## 2026-11-03 — App de iPad no Mac (Catalyst) ignora mouse e scroll por trás
+
+- **Gotcha / invariant:** o evento de `postToPid` chega ao `NSApplication` e à `UINSWindow` (key=false), mas o UIKit descarta mouse e scroll de app que não está na frente. `AXPress` num campo de texto sintetiza um mouse e cai do mesmo jeito. O que funciona: `AXPress` em botão e linha; foco no campo escrevendo `AXValue` com o próprio texto (o `AXFocused` não pega); `AXScrollDownByPage`/`Up`/`Left`/`Right` na área de rolagem. Tecla chega ao campo depois que ele tem foco.
+- **Why it matters:** sem isso, clique, digitação e scroll no WhatsApp para Mac não fazem nada e não dão erro.
+- **Applies to:** a janela Catalyst se reconhece pelo filho com subrole `iOSContentGroup`. O scroll anda uma página por chamada, não linha. O `sceneDidBecomeActive` dispara no lançamento mesmo atrás dos outros, então não prova que o app veio para a frente. Compilar a fixture pede `-target arm64-apple-ios17.0-macabi` com `-Fsystem`/`-I`/`-L` do `System/iOSSupport` do SDK.

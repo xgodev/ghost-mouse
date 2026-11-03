@@ -65,6 +65,8 @@ A click rests the pointer on the point for 300 ms before pressing, because a pro
 
 A single left click on a web page inside a window goes through Accessibility, which needs that permission and may take up to 2 s the first time. The page gets the click but no hover. Measured on a test page and on a button of Creality Print's Send to Lan Printer page; its Start Print was not pressed, because a real printer was selected. A switch on that same page (Print Calibration) did not change, so such a press is not proven for every control.
 
+An iPad app run on the Mac (Mac Catalyst, the kind WhatsApp for Mac is) drops every mouse and scroll event while it is not in front, so its clicks and scrolls go through Accessibility too. A text field takes the click as focus (its text is written back as it was, which leaves it focused), and typed keys then reach it; a button or a list row is pressed. A scroll moves the list one page per call, whatever the amount asked. Measured on a Catalyst test window behind the others: a text field focused and typed in, a row selected, the list scrolled and a button pressed, with the cursor and the front app untouched. WhatsApp itself was not tried, to keep away from a real account.
+
 ### Lists a program opens
 
 A list a program opens as its own panel can stay off the screen while the program is not in front. It is open all the same, so it can be photographed and clicked:

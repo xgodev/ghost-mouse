@@ -3,6 +3,7 @@
 #![cfg(target_os = "macos")]
 
 mod bundle;
+mod catalyst;
 mod controls;
 mod element;
 mod events;
@@ -10,6 +11,7 @@ mod front;
 mod held_back;
 mod location;
 mod panel;
+mod pointed;
 mod virtual_keys;
 mod web;
 mod windows;
@@ -60,7 +62,14 @@ impl Backend for MacBackend {
     }
 
     fn press_at(&self, window: &Window, at: Point) -> bool {
-        web::press(window, at)
+        let path = pointed::path_at(window, at);
+        web::press(&path) || catalyst::press(&path)
+    }
+
+    fn scroll_at(&self, window: &Window, at: Point, dx: i32, dy: i32) -> bool {
+        (dx, dy) != (0, 0)
+            && catalyst::shows_ipad_content(window)
+            && catalyst::scroll(&pointed::path_at(window, at), dx, dy)
     }
 
     fn check_delivery(&self, pid: i32) -> Result<()> {
